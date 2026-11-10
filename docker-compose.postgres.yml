@@ -1,0 +1,19 @@
+services:
+  api:
+    environment:
+      DATABASE_DIALECT: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-konspekai}:${POSTGRES_PASSWORD:-konspekai}@postgres:5432/${POSTGRES_DB:-konspekai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    environment:
+      DATABASE_DIALECT: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-konspekai}:${POSTGRES_PASSWORD:-konspekai}@postgres:5432/${POSTGRES_DB:-konspekai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    profiles: []

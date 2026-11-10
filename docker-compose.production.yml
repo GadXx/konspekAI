@@ -1,0 +1,10 @@
+services:
+  api:
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+
+  worker:
+    environment:
+      APP_ENV: production
+      NODE_ENV: production

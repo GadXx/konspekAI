@@ -1,0 +1,118 @@
+services:
+  api:
+    image: konspekai:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: npm run start:api
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      APP_ENV: development
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
+      SQLITE_PATH: /data/konspekai.sqlite
+      UPLOAD_DIRECTORY: /data/uploads
+      VOSK_MODELS_JSON: ${VOSK_MODELS_JSON:-{"ru":"/models/ru"}}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - app_data:/data
+      - vosk_models:/models:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      vosk-model:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    image: konspekai:local
+    command: npm run start:worker
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      APP_ENV: development
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
+      SQLITE_PATH: /data/konspekai.sqlite
+      UPLOAD_DIRECTORY: /data/uploads
+      VOSK_MODELS_JSON: ${VOSK_MODELS_JSON:-{"ru":"/models/ru"}}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - app_data:/data
+      - vosk_models:/models:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      vosk-model:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  vosk-model:
+    image: alpine:3.22
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ ! -f /models/ru/.model-source ] || [ "$(cat /models/ru/.model-source)" != "$${VOSK_MODEL_URL}" ]; then
+          apk add --no-cache curl unzip >/dev/null;
+          rm -rf /tmp/vosk /models/ru;
+          curl -fL --retry 3 "$${VOSK_MODEL_URL:-https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip}" -o /tmp/model.zip;
+          unzip -q /tmp/model.zip -d /tmp;
+          mkdir -p /models/ru;
+          MODEL_DIRECTORY=$$(find /tmp -maxdepth 1 -type d -name 'vosk-model-*' | head -n 1);
+          cp -a "$${MODEL_DIRECTORY}/." /models/ru/;
+          printf '%s' "$${VOSK_MODEL_URL}" > /models/ru/.model-source;
+        fi
+    volumes:
+      - vosk_models:/models
+    environment:
+      VOSK_MODEL_URL: ${VOSK_MODEL_URL:-https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip}
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-konspekai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-konspekai}
+      POSTGRES_DB: ${POSTGRES_DB:-konspekai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-konspekai} -d ${POSTGRES_DB:-konspekai}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  ollama-model:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull $${OLLAMA_MODEL:-qwen2.5:14b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  app_data:
+  vosk_models:
+  postgres_data:
+  ollama_data:
