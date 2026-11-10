@@ -14,7 +14,7 @@
     "db:migrate": "node packages/database/src/migrate.js"
   },
   "dependencies": {
-    "@fastify/multipart": "^9.2.1",
+    "@fastify/multipart": "^10.1.8",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.5.1",
     "@fastify/swagger-ui": "^6.1.3",
