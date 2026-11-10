@@ -4,6 +4,8 @@ Swagger UI: [`/docs`](http://localhost:3000/docs). OpenAPI JSON: [`/openapi.json
 
 In production, send `Authorization: Bearer <API_ACCESS_TOKEN>` with every `/api/v1/jobs` request. The API uses one shared machine token and does not create user accounts. `/healthz`, `/readyz`, `/api/v1/languages`, and API documentation remain public.
 
+The worker can use NVIDIA's OpenAI-compatible chat completions endpoint by setting `LLM_PROVIDER=nvidia` and `NVIDIA_API_KEY` in `.env`. The default model is `mistralai/mistral-large-4-1t-a52b`; configure `NVIDIA_MODEL` and `NVIDIA_REASONING_EFFORT` as needed. The NVIDIA API key is passed only to the worker container.
+
 Example production request header: `Authorization: Bearer YOUR_CONFIGURED_TOKEN`.
 
 ## Create a job

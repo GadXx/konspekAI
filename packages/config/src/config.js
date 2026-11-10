@@ -34,8 +34,8 @@ const trustProxyValue = process.env.TRUST_PROXY ?? 'false';
 const trustProxy = trustProxyValue === 'true' ? true
   : trustProxyValue === 'false' ? false
     : Number.isInteger(Number(trustProxyValue)) ? Number(trustProxyValue) : trustProxyValue;
-if (!['ollama', 'openai-compatible'].includes(provider)) {
-  throw new Error('LLM_PROVIDER must be either "ollama" or "openai-compatible"');
+if (!['ollama', 'openai-compatible', 'nvidia'].includes(provider)) {
+  throw new Error('LLM_PROVIDER must be "ollama", "openai-compatible", or "nvidia"');
 }
 if (!['api', 'worker', 'migrate'].includes(serviceRole)) {
   throw new Error('SERVICE_ROLE must be either "api", "worker", or "migrate"');
@@ -72,6 +72,10 @@ export const config = Object.freeze({
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
   openaiApiKey: process.env.OPENAI_API_KEY ?? '',
   openaiModel: process.env.OPENAI_MODEL ?? '',
+  nvidiaBaseUrl: process.env.NVIDIA_BASE_URL ?? 'https://integrate.api.nvidia.com/v1',
+  nvidiaApiKey: process.env.NVIDIA_API_KEY ?? '',
+  nvidiaModel: process.env.NVIDIA_MODEL ?? 'mistralai/mistral-large-4-1t-a52b',
+  nvidiaReasoningEffort: process.env.NVIDIA_REASONING_EFFORT ?? 'high',
   normalizationModel: process.env.LLM_NORMALIZATION_MODEL,
   summaryModel: process.env.LLM_SUMMARY_MODEL,
   llmTimeoutMs: integer('LLM_TIMEOUT_MS', 180000),
@@ -99,6 +103,12 @@ if (config.databaseDialect === 'sqlite' && config.workerConcurrency > 1) {
 }
 if (config.llmProvider === 'openai-compatible' && config.serviceRole === 'worker' && (!config.openaiApiKey || !config.openaiModel)) {
   throw new Error('OPENAI_API_KEY and OPENAI_MODEL are required when LLM_PROVIDER=openai-compatible');
+}
+if (config.llmProvider === 'nvidia' && config.serviceRole === 'worker' && !config.nvidiaApiKey) {
+  throw new Error('NVIDIA_API_KEY is required when LLM_PROVIDER=nvidia');
+}
+if (!['none', 'high'].includes(config.nvidiaReasoningEffort)) {
+  throw new Error('NVIDIA_REASONING_EFFORT must be either "none" or "high" for the configured NVIDIA model');
 }
 if (config.appEnv === 'production' && config.serviceRole === 'api' && config.apiAccessToken.length < 32) {
   throw new Error('API_ACCESS_TOKEN must contain at least 32 characters when APP_ENV=production');

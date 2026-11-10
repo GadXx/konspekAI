@@ -99,11 +99,15 @@ Copy `.env.example` and edit the values you need. Settings are read at process s
 | `DATABASE_DIALECT` | `sqlite` | `sqlite` for one local worker; `postgres` for concurrent workers. |
 | `SQLITE_PATH` | `/data/konspekai.sqlite` | SQLite database path. |
 | `DATABASE_URL` | local PostgreSQL URL | PostgreSQL connection string when the dialect is `postgres`. |
-| `LLM_PROVIDER` | `ollama` | `ollama` or `openai-compatible`. |
+| `LLM_PROVIDER` | `ollama` | `ollama`, `openai-compatible`, or `nvidia`. |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Host Ollama endpoint for the default Compose profile. |
 | `OLLAMA_MODEL` | `qwen2.5:14b` | Default local model. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for a compatible chat completions API. |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | empty | Required when `LLM_PROVIDER=openai-compatible`. |
+| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM OpenAI-compatible endpoint. |
+| `NVIDIA_API_KEY` | empty | Required by the worker when `LLM_PROVIDER=nvidia`; keep it in `.env` or a secret manager. |
+| `NVIDIA_MODEL` | `mistralai/mistral-large-4-1t-a52b` | NVIDIA model used unless stage-specific overrides are set. |
+| `NVIDIA_REASONING_EFFORT` | `high` | NVIDIA reasoning setting supported by the configured model: `none` or `high`. |
 | `API_ACCESS_TOKEN` | empty in development | Required in production; bearer token for job submission, status, and result routes. Use a random value of at least 32 characters. |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` | `120/60000` in development, `30/60000` in production | In-process per-client-IP request limit. Use a gateway limit for multiple API replicas. |
 | `TRUST_PROXY` | `false` | Trusted proxy hop count/address; configure only behind a known proxy. |

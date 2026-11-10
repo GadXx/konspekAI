@@ -1,21 +1,15 @@
-import OpenAI from 'openai';
 import { Ollama } from 'ollama';
 import { config } from '../../config/src/config.js';
+import { createNvidiaAdapter } from './adapters/nvidia.js';
+import { createOpenAiAdapter } from './adapters/openai.js';
 
 const ollama = new Ollama({ host: config.ollamaBaseUrl, requestOptions: { timeout: config.llmTimeoutMs } });
-const openai = config.llmProvider === 'openai-compatible' && config.openaiApiKey
-  ? new OpenAI({ baseURL: config.openaiBaseUrl, apiKey: config.openaiApiKey, timeout: config.llmTimeoutMs, maxRetries: config.llmMaxRetries })
-  : undefined;
+const apiAdapter = config.llmProvider === 'nvidia' && config.nvidiaApiKey ? createNvidiaAdapter()
+  : config.llmProvider === 'openai-compatible' && config.openaiApiKey ? createOpenAiAdapter()
+    : undefined;
 
 export function providerHealth() {
-  return { provider: config.llmProvider, configured: config.llmProvider === 'ollama' || Boolean(openai) || config.serviceRole === 'api' };
-}
-
-function modelFor(stage) {
-  if (stage === 'normalization') {
-    return config.normalizationModel || (config.llmProvider === 'ollama' ? config.ollamaModel : config.openaiModel);
-  }
-  return config.summaryModel || (config.llmProvider === 'ollama' ? config.ollamaModel : config.openaiModel);
+  return { provider: config.llmProvider, configured: config.llmProvider === 'ollama' || Boolean(apiAdapter?.configured) || config.serviceRole === 'api' };
 }
 
 function parseJsonResponse(content) {
@@ -32,11 +26,12 @@ function parseJsonResponse(content) {
 }
 
 export async function completeJson({ stage, messages, schema, maxTokens = config.llmMaxOutputTokens }) {
-  const model = modelFor(stage);
   let content;
   if (config.llmProvider === 'ollama') {
     const result = await ollama.chat({
-      model,
+      model: stage === 'normalization'
+        ? config.normalizationModel || config.ollamaModel
+        : config.summaryModel || config.ollamaModel,
       messages,
       stream: false,
       format: schema,
@@ -44,22 +39,16 @@ export async function completeJson({ stage, messages, schema, maxTokens = config
     });
     content = result.message.content;
   } else {
-    const result = await openai.chat.completions.create({
-      model,
-      messages,
-      max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-    });
-    content = result.choices[0]?.message?.content ?? '';
+    content = await apiAdapter.completeJson({ stage, messages, schema, maxTokens });
   }
-  return parseJsonResponse(content);
+  return typeof content === 'string' ? parseJsonResponse(content) : content;
 }
 
 export async function checkLlmConnection() {
   if (config.llmProvider === 'ollama') {
     await ollama.list();
   } else {
-    await openai.models.list();
+    await apiAdapter.checkConnection();
   }
   return true;
 }

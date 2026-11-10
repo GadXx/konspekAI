@@ -9,6 +9,7 @@ services:
       SERVICE_ROLE: migrate
       API_ACCESS_TOKEN: ""
       OPENAI_API_KEY: ""
+      NVIDIA_API_KEY: ""
       POSTGRES_PASSWORD: ""
       DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
       SQLITE_PATH: /data/konspekai.sqlite
@@ -35,6 +36,7 @@ services:
       SERVICE_ROLE: api
       API_ACCESS_TOKEN: ${API_ACCESS_TOKEN:-}
       OPENAI_API_KEY: ""
+      NVIDIA_API_KEY: ""
       POSTGRES_PASSWORD: ""
       DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
       SQLITE_PATH: /data/konspekai.sqlite
