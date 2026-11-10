@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 process.env.APP_ENV = 'development';
+process.env.LOG_LEVEL = 'error';
 process.env.DATABASE_DIALECT = 'sqlite';
 process.env.SQLITE_PATH = '.data/konspekai-test.sqlite';
 process.env.UPLOAD_DIRECTORY = '.data/test-uploads';

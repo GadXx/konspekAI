@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SUMMARY_TYPES, publicStatus, validateNote, validateSummaryType } from '../packages/domain/src/job.js';
+import { hasValidBearerToken } from '../apps/api/src/auth.js';
 
 test('summary types match the public contract', () => {
   assert.deepEqual(SUMMARY_TYPES, ['detailed', 'brief', 'bullet_points']);
@@ -24,4 +25,12 @@ test('public status does not expose transcript fields', () => {
   });
   assert.equal(status.id, 'job-id');
   assert.equal(Object.hasOwn(status, 'recognized_text'), false);
+});
+
+test('bearer API tokens are checked without account identities', () => {
+  const token = 'x'.repeat(48);
+  assert.equal(hasValidBearerToken(`Bearer ${token}`, token), true);
+  assert.equal(hasValidBearerToken('Bearer wrong', token), false);
+  assert.equal(hasValidBearerToken(undefined, token), false);
+  assert.equal(hasValidBearerToken(`Bearer ${token}`, ''), false);
 });

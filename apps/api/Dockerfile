@@ -20,4 +20,4 @@ RUN mkdir -p /data/uploads /models && chown -R node:node /data /models
 ENV NODE_ENV=production
 USER node
 EXPOSE 3000
-CMD ["npm", "run", "start:api"]
+CMD ["node", "apps/api/src/main.js"]

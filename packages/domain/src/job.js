@@ -13,9 +13,22 @@ export function publicStatus(job) {
     expires_at: job.expires_at,
   };
   if (job.status === 'failed') {
-    result.error = { code: job.error_code, message: job.error_message };
+    result.error = { code: job.error_code, message: publicErrorMessage(job.error_code) };
   }
   return result;
+}
+
+export function publicErrorMessage(code) {
+  const safeMessages = {
+    INVALID_MEDIA_FILE: 'The uploaded media could not be decoded.',
+    MEDIA_DECODE_FAILED: 'The uploaded media could not be decoded.',
+    NO_SPEECH_DETECTED: 'No speech was detected in the uploaded media.',
+    MEDIA_MISSING: 'The uploaded media is no longer available.',
+    UNSUPPORTED_LANGUAGE: 'The requested speech language is not supported.',
+    ASR_MODEL_UNAVAILABLE: 'The speech recognition model is temporarily unavailable.',
+    WORKER_LEASE_EXPIRED: 'The job could not be completed after repeated worker interruptions.',
+  };
+  return safeMessages[code] ?? 'The job could not be completed. Contact the service operator with the job ID.';
 }
 
 export function validateSummaryType(value) {

@@ -3,12 +3,12 @@ import { Ollama } from 'ollama';
 import { config } from '../../config/src/config.js';
 
 const ollama = new Ollama({ host: config.ollamaBaseUrl, requestOptions: { timeout: config.llmTimeoutMs } });
-const openai = config.llmProvider === 'openai-compatible'
-  ? new OpenAI({ baseURL: config.openaiBaseUrl, apiKey: config.openaiApiKey, timeout: config.llmTimeoutMs, maxRetries: 0 })
+const openai = config.llmProvider === 'openai-compatible' && config.openaiApiKey
+  ? new OpenAI({ baseURL: config.openaiBaseUrl, apiKey: config.openaiApiKey, timeout: config.llmTimeoutMs, maxRetries: config.llmMaxRetries })
   : undefined;
 
 export function providerHealth() {
-  return { provider: config.llmProvider, configured: config.llmProvider === 'ollama' || Boolean(openai) };
+  return { provider: config.llmProvider, configured: config.llmProvider === 'ollama' || Boolean(openai) || config.serviceRole === 'api' };
 }
 
 function modelFor(stage) {

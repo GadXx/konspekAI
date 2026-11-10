@@ -2,8 +2,9 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import { buildApp } from '../apps/api/src/app.js';
-import { closeDatabase, getJob, claimNextJob, updateJob } from '../packages/database/src/database.js';
+import { closeDatabase, getJob, claimNextJob, updateJob, updateClaimedJob, recoverExpiredLeases, migrate } from '../packages/database/src/database.js';
 
+await migrate();
 const app = await buildApp();
 
 test('health and language routes are available', async () => {
@@ -28,10 +29,13 @@ test('text submission returns an asynchronous job and can be claimed by a worker
   const claimed = await claimNextJob({ leaseSeconds: 60 });
   assert.equal(claimed.id, job.id);
   assert.equal(claimed.attempt_count, 1);
+  assert.ok(claimed.lease_token);
+  assert.equal(await updateClaimedJob(job.id, 'stale-lease-token', { progress: 'stale-write' }), undefined);
   const note = { title: 'Очередь задач', summary: '', sections: [], key_points: ['Задачи хранятся в базе.'], markdown: '# Очередь задач' };
-  await updateJob(job.id, {
+  await updateClaimedJob(job.id, claimed.lease_token, {
     status: 'completed', progress: 'completed', recognized_text: 'Распознанный текст.',
     normalized_transcript: 'Нормализованный текст.', note_json: JSON.stringify(note), lease_expires_at: null,
+    lease_token: null,
   });
   const result = await app.inject({ method: 'GET', url: `/api/v1/jobs/${job.id}/result` });
   assert.equal(result.statusCode, 200);
@@ -72,6 +76,26 @@ test('Swagger UI and OpenAPI document are mounted', async () => {
   const schema = await app.inject({ method: 'GET', url: '/openapi.json' });
   assert.equal(schema.statusCode, 200);
   assert.equal(schema.json().info.title, 'KonspekAI API');
+  assert.equal(schema.json().components.securitySchemes.bearerAuth.scheme, 'bearer');
+});
+
+test('expired leases become terminal after the configured attempt limit', async () => {
+  const response = await app.inject({ method: 'POST', url: '/api/v1/jobs', payload: { text: 'Lease recovery test.' } });
+  const job = await getJob(response.json().id);
+  await updateJob(job.id, { status: 'processing', attempt_count: 3, lease_token: 'expired-lease-token', lease_expires_at: '2000-01-01T00:00:00.000Z' });
+  assert.equal(await recoverExpiredLeases(), 1);
+  const recovered = await getJob(job.id);
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.error_code, 'WORKER_LEASE_EXPIRED');
+  assert.equal(recovered.lease_token, null);
+  assert.equal(await updateClaimedJob(job.id, 'expired-lease-token', { status: 'completed' }), undefined);
+});
+
+test('requests are rate limited with the documented error contract', async () => {
+  const responses = await Promise.all(Array.from({ length: 125 }, () => app.inject({ method: 'GET', url: '/api/v1/languages' })));
+  assert.ok(responses.some((response) => response.statusCode === 429));
+  const limited = responses.find((response) => response.statusCode === 429);
+  assert.equal(limited.json().error.code, 'RATE_LIMITED');
 });
 
 after(async () => {

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import koffi from 'koffi';
 import { config } from '../../config/src/config.js';
 import { isVoskModelAvailable } from './models.js';
+import { mediaDemuxerForPath } from './inspect.js';
 
 const models = new Map();
 let voskApi;
@@ -55,7 +56,12 @@ export function transcribeMedia(filePath, language) {
   if (!recognizer) {
     return Promise.reject(new Error(`Vosk could not create a recognizer for language "${language}"`));
   }
-  const args = ['-nostdin', '-v', 'error', '-i', filePath, '-vn', '-ac', '1', '-ar', String(config.asrSampleRate), '-f', 's16le', '-acodec', 'pcm_s16le', 'pipe:1'];
+  const demuxer = mediaDemuxerForPath(filePath);
+  if (!demuxer) {
+    vosk.recognizerFree(recognizer);
+    return Promise.reject(Object.assign(new Error('Unsupported media file extension'), { code: 'INVALID_MEDIA_FILE' }));
+  }
+  const args = ['-nostdin', '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', demuxer, '-i', filePath, '-vn', '-threads', String(config.ffmpegThreads), '-ac', '1', '-ar', String(config.asrSampleRate), '-f', 's16le', '-acodec', 'pcm_s16le', 'pipe:1'];
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn(config.ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
@@ -64,6 +70,7 @@ export function transcribeMedia(filePath, language) {
     const finish = (error, transcript) => {
       if (!settled) {
         settled = true;
+        clearTimeout(timer);
         vosk.recognizerFree(recognizer);
         if (error) {
           reject(error);
@@ -72,7 +79,14 @@ export function transcribeMedia(filePath, language) {
         }
       }
     };
+    const timer = setTimeout(() => {
+      ffmpeg.kill('SIGKILL');
+      const error = new Error('Media transcription timed out');
+      error.code = 'MEDIA_PROCESS_TIMEOUT';
+      finish(error);
+    }, config.mediaProcessTimeoutMs);
     ffmpeg.stdout.on('data', (chunk) => {
+      if (settled) {return;}
       try {
         const accepted = vosk.acceptWaveform(recognizer, chunk, chunk.length);
         if (accepted < 0) {
@@ -89,11 +103,11 @@ export function transcribeMedia(filePath, language) {
         finish(error);
       }
     });
-    ffmpeg.stderr.on('data', (chunk) => { stderr += chunk.toString().slice(0, 2048); });
+    ffmpeg.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk.toString()}`.slice(-2048); });
     ffmpeg.on('error', (error) => finish(new Error(`Could not start ffmpeg: ${error.message}`)));
     ffmpeg.on('close', (code) => {
       if (code !== 0) {
-        finish(new Error(`ffmpeg exited with code ${code}: ${stderr.trim() || 'media decoding failed'}`));
+        finish(Object.assign(new Error(`ffmpeg exited with code ${code}: ${stderr.trim() || 'media decoding failed'}`), { code: 'MEDIA_DECODE_FAILED' }));
         return;
       }
       try {
@@ -102,7 +116,7 @@ export function transcribeMedia(filePath, language) {
           segments.push(finalResult.text.trim());
         }
         if (segments.length === 0) {
-          finish(new Error('No speech was detected in the uploaded media'));
+          finish(Object.assign(new Error('No speech was detected in the uploaded media'), { code: 'NO_SPEECH_DETECTED' }));
           return;
         }
         finish(undefined, segments.join(' '));

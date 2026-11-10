@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeNote, renderMarkdown, splitAtWordBoundary } from '../packages/llm/src/pipeline.js';
+import { normalizeNote, renderMarkdown, splitAtWordBoundary, renderPrompt } from '../packages/llm/src/pipeline.js';
 
 test('long text is split at word boundaries without loss', () => {
   const input = 'Восстановление смысла требует аккуратного деления текста на небольшие части. Каждая часть должна оставаться читаемой.';
@@ -19,4 +19,11 @@ test('model bullet markers are normalized before Markdown rendering', () => {
   assert.equal(note.title, 'Очередь сохраняет работу.');
   assert.deepEqual(note.key_points, ['Очередь сохраняет работу.']);
   assert.equal(renderMarkdown(note), '# Очередь сохраняет работу.\n\n## Ключевые тезисы\n\n- Очередь сохраняет работу.');
+});
+
+test('stage prompts are loaded from editable templates and substitute language', () => {
+  const prompt = renderPrompt('normalization.system.txt', { language: 'kk' });
+  assert.match(prompt, /языке kk/u);
+  assert.match(renderPrompt('summary.brief.system.txt', { language: 'en' }), /краткий учебный конспект/u);
+  assert.match(renderPrompt('summary.merge.system.txt', { summary_type: 'detailed' }), /типа detailed/u);
 });

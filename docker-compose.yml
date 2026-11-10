@@ -1,21 +1,48 @@
 services:
+  migrate:
+    image: konspekai:local
+    command: node packages/database/src/migrate.js
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      APP_ENV: development
+      SERVICE_ROLE: migrate
+      API_ACCESS_TOKEN: ""
+      OPENAI_API_KEY: ""
+      POSTGRES_PASSWORD: ""
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
+      SQLITE_PATH: /data/konspekai.sqlite
+    volumes:
+      - app_data:/data
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+
   api:
     image: konspekai:local
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    command: npm run start:api
+    command: node apps/api/src/main.js
     env_file: .env
     environment:
       NODE_ENV: development
       APP_ENV: development
+      SERVICE_ROLE: api
+      API_ACCESS_TOKEN: ${API_ACCESS_TOKEN:-}
+      OPENAI_API_KEY: ""
+      POSTGRES_PASSWORD: ""
       DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
       SQLITE_PATH: /data/konspekai.sqlite
       UPLOAD_DIRECTORY: /data/uploads
       VOSK_MODELS_JSON: ${VOSK_MODELS_JSON:-{"ru":"/models/ru"}}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     volumes:
       - app_data:/data
       - vosk_models:/models:ro
@@ -24,15 +51,32 @@ services:
     depends_on:
       vosk-model:
         condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   worker:
     image: konspekai:local
-    command: npm run start:worker
+    command: node apps/worker/src/main.js
     env_file: .env
     environment:
       NODE_ENV: development
       APP_ENV: development
+      SERVICE_ROLE: worker
+      API_ACCESS_TOKEN: ""
+      POSTGRES_PASSWORD: ""
       DATABASE_DIALECT: ${DATABASE_DIALECT:-sqlite}
       SQLITE_PATH: /data/konspekai.sqlite
       UPLOAD_DIRECTORY: /data/uploads
@@ -46,7 +90,15 @@ services:
     depends_on:
       vosk-model:
         condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
 
   vosk-model:
     image: alpine:3.22
@@ -68,21 +120,6 @@ services:
     environment:
       VOSK_MODEL_URL: ${VOSK_MODEL_URL:-https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip}
     restart: "no"
-
-  postgres:
-    image: postgres:17-alpine
-    profiles: ["postgres"]
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-konspekai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-konspekai}
-      POSTGRES_DB: ${POSTGRES_DB:-konspekai}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-konspekai} -d ${POSTGRES_DB:-konspekai}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
 
   ollama:
     image: ollama/ollama:latest

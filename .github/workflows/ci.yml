@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,6 +19,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm test
-      - run: docker build -f apps/api/Dockerfile -t konspekai:ci .
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+      - run: docker compose --profile ollama -f docker-compose.yml -f docker-compose.ollama.yml config --quiet
+      - run: POSTGRES_PASSWORD='ci-only-password-0123456789abcdef' DATABASE_URL='postgres://konspekai:ci-only-password-0123456789abcdef@postgres:5432/konspekai' docker compose --profile postgres -f docker-compose.yml -f docker-compose.postgres.yml config --quiet
+      - run: docker build --pull -f apps/api/Dockerfile -t konspekai:ci .

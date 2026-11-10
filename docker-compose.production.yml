@@ -1,4 +1,9 @@
 services:
+  migrate:
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+
   api:
     environment:
       APP_ENV: production
