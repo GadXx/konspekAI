@@ -37,13 +37,13 @@ docker compose up --build
 - OpenAPI JSON: <http://localhost:3000/openapi.json>
 - Проверка состояния API: <http://localhost:3000/readyz>
 
-Compose запускает API в режиме разработки: ответ задания включает распознанный текст и нормализованную расшифровку. Для развёртывания используйте производственный профиль и задайте `API_ACCESS_TOKEN` случайным значением не короче 32 символов:
+Compose запускает API в режиме разработки: по умолчанию используется SQLite, а ответ задания включает распознанный текст и нормализованную расшифровку. В production по умолчанию выбирается PostgreSQL; задайте `POSTGRES_PASSWORD`, `DATABASE_URL` и `API_ACCESS_TOKEN` (случайное значение не короче 32 символов) в `.env`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.postgres.yml up --build
 ```
 
-Производственный профиль ограничивает публикацию API локальным адресом, включает файловую систему только для чтения и снимает Linux capabilities. Перед доступом из интернета настройте TLS и доверенный обратный прокси. Для нескольких процессов worker используйте PostgreSQL.
+Производственный профиль ограничивает публикацию API локальным адресом, включает файловую систему только для чтения и снимает Linux capabilities. Перед доступом из интернета настройте TLS и доверенный обратный прокси. Диалект можно явно переопределить через `DATABASE_DIALECT=sqlite` или `DATABASE_DIALECT=postgres`; при явном выборе SQLite уберите файл `docker-compose.postgres.yml` из команды.
 
 ## Веб-приложение и библиотека
 
@@ -71,7 +71,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml up --build
 docker compose --profile ollama -f docker-compose.yml -f docker-compose.ollama.yml up --build
 ```
 
-### Запуск с PostgreSQL
+### Явный запуск с PostgreSQL в режиме разработки
 
 SQLite подходит для одного локального worker. Для нескольких worker используйте PostgreSQL:
 

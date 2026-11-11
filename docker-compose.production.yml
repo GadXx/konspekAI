@@ -3,13 +3,19 @@ services:
     environment:
       APP_ENV: production
       NODE_ENV: production
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-}
 
   api:
     environment:
       APP_ENV: production
       NODE_ENV: production
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-}
 
   worker:
     environment:
       APP_ENV: production
       NODE_ENV: production
+      DATABASE_DIALECT: ${DATABASE_DIALECT:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-}

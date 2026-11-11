@@ -30,6 +30,7 @@ function languageModels() {
 const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development';
 const serviceRole = process.env.SERVICE_ROLE ?? 'api';
 const provider = process.env.LLM_PROVIDER ?? 'ollama';
+const databaseDialect = process.env.DATABASE_DIALECT?.trim() || (appEnv === 'production' ? 'postgres' : 'sqlite');
 const llmTemperature = Number(process.env.LLM_TEMPERATURE ?? 0.2);
 if (!Number.isFinite(llmTemperature) || llmTemperature < 0 || llmTemperature > 2) {
   throw new Error('LLM_TEMPERATURE must be a number between 0 and 2');
@@ -53,7 +54,7 @@ export const config = Object.freeze({
   host: process.env.HOST ?? '0.0.0.0',
   port: integer('PORT', 3000),
   logLevel: process.env.LOG_LEVEL ?? 'info',
-  databaseDialect: process.env.DATABASE_DIALECT ?? 'sqlite',
+  databaseDialect,
   sqlitePath: process.env.SQLITE_PATH ?? '/data/konspekai.sqlite',
   databaseUrl: process.env.DATABASE_URL,
   databaseBusyTimeoutMs: integer('DATABASE_BUSY_TIMEOUT_MS', 10000),
