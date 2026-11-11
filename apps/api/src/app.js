@@ -239,6 +239,7 @@ export async function buildApp() {
   await mkdir(config.uploadDirectory, { recursive: true });
   const app = Fastify({ logger: { level: config.logLevel }, bodyLimit: config.maxTextChars * 4, trustProxy: config.trustProxy });
   await app.register(rateLimit, {
+    global: false,
     max: config.rateLimitMax,
     timeWindow: config.rateLimitWindowMs,
     allowList: (request) => ['/healthz', '/readyz'].includes(request.url.split('?')[0]),
@@ -373,6 +374,7 @@ export async function buildApp() {
   });
 
   app.delete('/api/v1/library/notes/:id', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: { tags: ['library'], summary: 'Delete a saved note permanently', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
   }, async (request, reply) => {
     const deleted = await deleteLibraryNote(request.params.id);
@@ -383,6 +385,7 @@ export async function buildApp() {
   });
 
   app.patch('/api/v1/library/notes/:id', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
       tags: ['library'], summary: 'Move a saved note to a folder or to the unfiled section', security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
@@ -404,6 +407,7 @@ export async function buildApp() {
   });
 
   app.post('/api/v1/library/folders', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
       tags: ['library'], summary: 'Create a library folder', security: [{ bearerAuth: [] }],
       body: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'], additionalProperties: false },
@@ -418,6 +422,7 @@ export async function buildApp() {
   });
 
   app.patch('/api/v1/library/folders/:id', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
       tags: ['library'], summary: 'Rename a library folder', security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
@@ -437,6 +442,7 @@ export async function buildApp() {
   });
 
   app.delete('/api/v1/library/folders/:id', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: { tags: ['library'], summary: 'Permanently delete a folder and all saved notes inside it', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
   }, async (request, reply) => {
     const deleted = await deleteLibraryFolder(request.params.id);
@@ -447,6 +453,7 @@ export async function buildApp() {
   });
 
   app.post('/api/v1/jobs', {
+    config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     // Multipart streams have no parsed request.body; validate the request in readSubmission instead.
     validatorCompiler: () => (data) => ({ value: data }),
     schema: {
@@ -549,6 +556,14 @@ export async function buildApp() {
       normalized_transcript: job.normalized_transcript,
       ...note,
     };
+  });
+
+  app.setNotFoundHandler(async (request, reply) => {
+    const pathname = request.url.split('?')[0];
+    if (request.method === 'GET' && (/^\/library\/?$/.test(pathname) || /^\/library\/notes\/[^/]+\/?$/.test(pathname))) {
+      return reply.type('text/html; charset=utf-8').send(await readFile(join(WEB_DIRECTORY, 'index.html')));
+    }
+    return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
   });
 
   app.addHook('onClose', async () => {
