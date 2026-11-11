@@ -1,5 +1,6 @@
 .git
 .env
+.env.*
 .data
 node_modules
 apps/web/dist

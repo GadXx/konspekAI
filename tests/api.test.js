@@ -17,7 +17,7 @@ import {
 await migrate();
 const app = await buildApp();
 
-test('health and language routes are available', async () => {
+test('маршруты проверки состояния и списка языков доступны', async () => {
   const health = await app.inject({ method: 'GET', url: '/healthz' });
   assert.equal(health.statusCode, 200);
   assert.deepEqual(health.json(), { status: 'ok' });
@@ -26,7 +26,7 @@ test('health and language routes are available', async () => {
   assert.equal(languages.json().languages[0].code, 'ru');
 });
 
-test('Vue browser interface and built assets are served by the API', async () => {
+test('API отдаёт Vue-приложение и его собранные ресурсы', async () => {
   const page = await app.inject({ method: 'GET', url: '/' });
   assert.equal(page.statusCode, 200);
   assert.match(page.headers['content-type'], /text\/html/u);
@@ -35,6 +35,13 @@ test('Vue browser interface and built assets are served by the API', async () =>
   const stylesPath = page.body.match(/href="([^"]+\.css)"/u)?.[1];
   assert.ok(scriptPath);
   assert.ok(stylesPath);
+
+  for (const path of ['/library', '/library/notes/00000000-0000-4000-8000-000000000000']) {
+    const spaRoute = await app.inject({ method: 'GET', url: path });
+    assert.equal(spaRoute.statusCode, 200);
+    assert.match(spaRoute.headers['content-type'], /text\/html/u);
+    assert.match(spaRoute.body, /id="app"/u);
+  }
 
   const script = await app.inject({ method: 'GET', url: scriptPath });
   assert.equal(script.statusCode, 200);
@@ -49,7 +56,7 @@ test('Vue browser interface and built assets are served by the API', async () =>
   assert.equal(missing.statusCode, 404);
 });
 
-test('completed notes are saved permanently in the library and folder deletion cascades', async () => {
+test('готовые конспекты сохраняются в библиотеке, а удаление папки удаляет её содержимое', async () => {
   const folderResponse = await app.inject({ method: 'POST', url: '/api/v1/library/folders', payload: { name: 'Философия' } });
   assert.equal(folderResponse.statusCode, 201);
   let folder = folderResponse.json();
@@ -108,7 +115,7 @@ test('completed notes are saved permanently in the library and folder deletion c
   assert.equal(missingNote.statusCode, 404);
 });
 
-test('text submission returns an asynchronous job and can be claimed by a worker', async () => {
+test('текстовый запрос создаёт задание, которое может получить worker', async () => {
   const response = await app.inject({
     method: 'POST', url: '/api/v1/jobs',
     payload: { text: 'Важное содержание лекции.', summary_type: 'brief' },
@@ -136,7 +143,7 @@ test('text submission returns an asynchronous job and can be claimed by a worker
   assert.equal(result.json().title, note.title);
 });
 
-test('placeholder text is rejected instead of creating a meaningless note job', async () => {
+test('текст-заполнитель отклоняется вместо создания пустого задания', async () => {
   const response = await app.inject({
     method: 'POST', url: '/api/v1/jobs', payload: { text: 'string' },
   });
@@ -144,7 +151,7 @@ test('placeholder text is rejected instead of creating a meaningless note job', 
   assert.equal(response.json().error.code, 'PLACEHOLDER_TEXT');
 });
 
-test('invalid language and unsupported media extensions are rejected', async () => {
+test('неверный язык и неподдерживаемое расширение файла отклоняются', async () => {
   const language = await app.inject({
     method: 'POST', url: '/api/v1/jobs', payload: { text: 'Текст', language: '%' },
   });
@@ -159,7 +166,7 @@ test('invalid language and unsupported media extensions are rejected', async () 
   assert.equal(file.statusCode, 415);
 });
 
-test('text input can use an output language without requiring a matching Vosk model', async () => {
+test('для текстового ввода не требуется модель Vosk для языка конспекта', async () => {
   const response = await app.inject({
     method: 'POST', url: '/api/v1/jobs',
     payload: { text: 'This is an English source text.', language: 'en', summary_language: 'en' },
@@ -170,7 +177,7 @@ test('text input can use an output language without requiring a matching Vosk mo
   assert.equal(job.summary_language, 'en');
 });
 
-test('Swagger UI and OpenAPI document are mounted', async () => {
+test('Swagger UI и спецификация OpenAPI доступны', async () => {
   const docs = await app.inject({ method: 'GET', url: '/docs' });
   assert.equal(docs.statusCode, 200);
   const schema = await app.inject({ method: 'GET', url: '/openapi.json' });
@@ -179,7 +186,7 @@ test('Swagger UI and OpenAPI document are mounted', async () => {
   assert.equal(schema.json().components.securitySchemes.bearerAuth.scheme, 'bearer');
 });
 
-test('expired leases become terminal after the configured attempt limit', async () => {
+test('задания с истёкшей арендой завершаются после предельного числа попыток', async () => {
   const response = await app.inject({ method: 'POST', url: '/api/v1/jobs', payload: { text: 'Lease recovery test.' } });
   const job = await getJob(response.json().id);
   await updateJob(job.id, { status: 'processing', attempt_count: 3, lease_token: 'expired-lease-token', lease_expires_at: '2000-01-01T00:00:00.000Z' });
@@ -191,11 +198,17 @@ test('expired leases become terminal after the configured attempt limit', async 
   assert.equal(await updateClaimedJob(job.id, 'expired-lease-token', { status: 'completed' }), undefined);
 });
 
-test('requests are rate limited with the documented error contract', async () => {
-  const responses = await Promise.all(Array.from({ length: 125 }, () => app.inject({ method: 'GET', url: '/api/v1/languages' })));
+test('чтение библиотеки не ограничивается, а изменение данных сохраняет лимит', async () => {
+  const reads = await Promise.all(Array.from({ length: 125 }, () => app.inject({ method: 'GET', url: '/api/v1/library' })));
+  assert.ok(reads.every((response) => response.statusCode === 200));
+
+  const responses = await Promise.all(Array.from({ length: 125 }, (_, index) => app.inject({
+    method: 'POST', url: '/api/v1/library/folders', payload: { name: `Лимит ${index}` },
+  })));
   assert.ok(responses.some((response) => response.statusCode === 429));
   const limited = responses.find((response) => response.statusCode === 429);
   assert.equal(limited.json().error.code, 'RATE_LIMITED');
+  assert.match(limited.json().error.message, /Слишком много запросов/u);
 });
 
 after(async () => {

@@ -1,16 +1,14 @@
-# API guide
+# Руководство по API
 
-Swagger UI: [`/docs`](http://localhost:3000/docs). OpenAPI JSON: [`/openapi.json`](http://localhost:3000/openapi.json).
+Интерактивная документация: [`/docs`](http://localhost:3000/docs). Спецификация OpenAPI: [`/openapi.json`](http://localhost:3000/openapi.json).
 
-In production, send `Authorization: Bearer <API_ACCESS_TOKEN>` with every `/api/v1/jobs` and `/api/v1/library` request. The API uses one shared machine token and does not create user accounts. `/healthz`, `/readyz`, `/api/v1/languages`, and API documentation remain public.
+В производственном режиме передавайте заголовок `Authorization: Bearer <API_ACCESS_TOKEN>` для методов `/api/v1/jobs` и `/api/v1/library`. Используется один общий токен без пользовательских учётных записей. Проверки состояния, список языков, Swagger UI и OpenAPI доступны без токена.
 
-The worker can use NVIDIA's OpenAI-compatible chat completions endpoint by setting `LLM_PROVIDER=nvidia` and `NVIDIA_API_KEY` in `.env`. The default model is `mistralai/mistral-large-4-1t-a52b`; configure `NVIDIA_MODEL` and `NVIDIA_REASONING_EFFORT` as needed. The NVIDIA API key is passed only to the worker container.
+## Создать задание
 
-Example production request header: `Authorization: Bearer YOUR_CONFIGURED_TOKEN`.
+`POST /api/v1/jobs` принимает текст в формате JSON либо один видео- или аудиофайл через `multipart/form-data`. Поле `language` задаёт язык исходной речи и модель Vosk. Поле `summary_language` необязательно и по умолчанию совпадает с `language`. Тип конспекта задаётся значением `detailed`, `brief` или `bullet_points`.
 
-## Create a job
-
-`POST /api/v1/jobs` accepts either JSON text or multipart data containing one video/audio file. Use `summary_type=detailed|brief|bullet_points`, `language` for the configured speech model, and optional `summary_language` for the note output.
+Пример тела запроса:
 
 ```json
 {
@@ -21,27 +19,42 @@ Example production request header: `Authorization: Bearer YOUR_CONFIGURED_TOKEN`
 }
 ```
 
-Response: `202 Accepted` with `id`, `status_url`, and `result_url`.
+Для медиафайлов используйте multipart-поле `media`, а также поля `language`, `summary_language` и `summary_type`.
 
-## Check and fetch
+Успешный ответ — `202 Accepted` с идентификатором задания и адресами проверки состояния и получения результата:
 
-- `GET /api/v1/jobs/{id}` returns state, progress, retry number, timestamps, and terminal error if any.
-- `GET /api/v1/jobs/{id}/result` returns `409` while the job is not complete. In production it returns only the note. In development it also includes `recognized_text` and `normalized_transcript`.
-- `GET /api/v1/languages` lists configured Vosk languages.
-- `GET /healthz` and `GET /readyz` are liveness/readiness checks.
+```json
+{
+  "id": "идентификатор-задания",
+  "status": "queued",
+  "status_url": "/api/v1/jobs/идентификатор-задания",
+  "result_url": "/api/v1/jobs/идентификатор-задания/result"
+}
+```
 
-## Personal library
+## Состояние и результат
 
-Every completed job is automatically copied to the persistent library. Library notes are independent of the temporary job retention period and remain until deleted. The local application currently has one library and no accounts.
+- `GET /api/v1/jobs/{id}` возвращает состояние, этап обработки, номер попытки и временные метки. При окончательном сбое содержит код и безопасное описание ошибки.
+- `GET /api/v1/jobs/{id}/result` возвращает `409`, пока задание не завершено. В производственном режиме ответ содержит только конспект. В режиме разработки дополнительно доступны `recognized_text` и `normalized_transcript`.
+- `GET /api/v1/languages` возвращает языки, для которых настроены модели Vosk.
+- `GET /healthz` проверяет, что API запущен; `GET /readyz` проверяет подключение к базе данных и конфигурацию провайдера LLM.
 
-- `GET /api/v1/library` returns folders and a page of notes. Use `folder_id=unfiled` for notes without a folder, a folder UUID to filter, `q` to search titles and summaries, and `limit`/`offset` for pagination.
-- `GET /api/v1/library/notes/{id}` returns one saved note.
-- `PATCH /api/v1/library/notes/{id}` moves a note: `{"folder_id":"<folder UUID>"}`; use `null` to move it to “Без папки”. A note belongs to at most one folder.
-- `DELETE /api/v1/library/notes/{id}` permanently removes a note.
-- `POST /api/v1/library/folders` creates a folder: `{"name":"Философия"}`.
-- `PATCH /api/v1/library/folders/{id}` renames a folder.
-- `DELETE /api/v1/library/folders/{id}` permanently removes the folder and every note in it.
+## Личная библиотека
 
-Supported input extensions: `.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.opus`, `.flac`, `.wma`, `.mp4`, `.mkv`, `.mov`, `.webm`, `.avi`, `.m4v`. Upload size, text length, media duration, and retention are configured through environment variables.
+Каждый завершённый конспект автоматически сохраняется в библиотеке. Срок его хранения не зависит от срока хранения задания. Сейчас библиотека общая для локального экземпляра; аккаунтов и разделения между пользователями нет.
 
-The default request limit is 120 requests per minute in development and 30 per minute in production, per client IP and per API process. A reverse proxy should apply a shared limit when multiple API replicas run. Set `TRUST_PROXY` only to a known proxy configuration; otherwise Fastify ignores forwarded client addresses.
+- `GET /api/v1/library` возвращает папки и страницу конспектов. Параметр `folder_id=unfiled` выбирает конспекты без папки, UUID — конкретную папку, `q` ищет по заголовку и краткому содержанию. `limit` и `offset` задают размер страницы и смещение.
+- `GET /api/v1/library/notes/{id}` возвращает полный конспект.
+- `PATCH /api/v1/library/notes/{id}` перемещает конспект. Передайте `{"folder_id":"<UUID папки>"}` или `{"folder_id":null}`, чтобы убрать его из папки. Конспект может находиться только в одной папке.
+- `DELETE /api/v1/library/notes/{id}` безвозвратно удаляет конспект.
+- `POST /api/v1/library/folders` создаёт папку, например `{"name":"Философия"}`.
+- `PATCH /api/v1/library/folders/{id}` переименовывает папку.
+- `DELETE /api/v1/library/folders/{id}` безвозвратно удаляет папку и все конспекты в ней.
+
+## Ограничения и защита
+
+Поддерживаются расширения: `.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.opus`, `.flac`, `.wma`, `.mp4`, `.mkv`, `.mov`, `.webm`, `.avi`, `.m4v`. По умолчанию максимальный размер файла — 512 МиБ, максимальная длительность записи — 4 часа, максимальный размер текста — 1 000 000 символов. Значения настраиваются переменными среды `MAX_UPLOAD_BYTES`, `MAX_MEDIA_DURATION_SECONDS` и `MAX_TEXT_CHARS`.
+
+Лимит `RATE_LIMIT_MAX` применяется отдельно к каждому маршруту, изменяющему данные: созданию задания и операциям с папками и конспектами. Повторные запросы на чтение, включая получение статуса, результата и библиотеки, этим лимитом не ограничиваются. Лимит хранится в памяти одного процесса API; при запуске нескольких экземпляров общий лимит нужно настроить на обратном прокси.
+
+Дополнительные примеры и параметры см. в [README](../README.md) и интерактивной документации Swagger.

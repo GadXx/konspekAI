@@ -1,19 +1,19 @@
-# ADR 0001: Persisted asynchronous jobs
+# ADR 0001: Асинхронная обработка заданий
 
-- Status: accepted
-- Date: 2026-11-11
+- Статус: принято
+- Дата: 2026-11-11
 
-## Context
+## Контекст
 
-Media conversion, offline speech recognition, transcript normalization, and note generation can take longer than a normal HTTP request. Clients need a stable way to submit work and retrieve its status and result after reconnecting. Workers must be restartable and multiple workers must be safe when PostgreSQL is used.
+Преобразование медиа, офлайн-распознавание речи, нормализация расшифровки и составление конспекта могут занять дольше обычного HTTP-запроса. Клиенту нужно передавать работу сервису и получать её состояние или результат позже. Worker должны безопасно перезапускаться; при использовании PostgreSQL несколько worker должны делить очередь.
 
-## Decision
+## Решение
 
-The API stores a job and returns `202 Accepted` with a job ID. The API and worker run as separate containers from the same image. Job state and worker leases live in the configured database. SQLite is the single-worker local option; PostgreSQL is the multi-worker option. Workers periodically recover expired leases and retry failed jobs up to a configured limit.
+API сохраняет задание и отвечает `202 Accepted` с его идентификатором. API и worker запускаются в отдельных контейнерах из одного образа. Состояние заданий и аренда worker хранятся в выбранной базе данных. SQLite предназначена для одного локального worker, PostgreSQL — для параллельной обработки. Worker восстанавливает задания с истёкшей арендой и повторяет сбои до настроенного предела попыток.
 
-## Consequences
+## Последствия
 
-- Clients poll the status and result endpoints.
-- Restarted workers resume queued work from the database.
-- A worker must share the upload volume with the API.
-- SQLite remains intended for one local worker; PostgreSQL provides concurrent claims using row locks.
+- Клиенты запрашивают состояние и результат отдельными HTTP-запросами.
+- После перезапуска worker продолжает обработку заданий из очереди.
+- API и worker должны иметь доступ к общему тому загруженных файлов.
+- SQLite остаётся простым вариантом для локального запуска; конкурентное получение заданий через блокировки строк реализовано для PostgreSQL.

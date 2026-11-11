@@ -1,34 +1,41 @@
-# Architecture
+# Архитектура
 
 ```mermaid
 flowchart LR
-    Client -->|202 + job ID| API
-    Migration --> DB[(SQLite / PostgreSQL)]
-    API --> DB[(SQLite / PostgreSQL)]
-    API -->|shared upload volume| Media
+    Client[Веб-приложение или клиент API] -->|202 + идентификатор задания| API
+    Migration[Контейнер миграции] --> DB[(SQLite / PostgreSQL)]
+    API --> DB
+    API -->|загруженный медиафайл| Uploads[(Общий том файлов)]
     Worker --> DB
-    Worker -->|video/audio| FFmpeg
-    FFmpeg --> Vosk
-    Worker -->|normalized transcript| LLM[Ollama or OpenAI-compatible API]
+    Worker -->|видео или аудио| FFmpeg
+    FFmpeg --> Vosk[Локальный Vosk]
+    Worker -->|текст расшифровки| LLM[Ollama или совместимый API]
     LLM --> Worker
-    Worker -->|note + diagnostics| DB
-    Client -->|status / result| API
+    Worker -->|результат и диагностика| DB
+    Client -->|состояние или результат| API
 ```
 
-The one-shot migration container applies database migrations before API and worker startup. The API validates and stores requests, and exposes job status and results. Production job routes require a shared bearer token; there are no user accounts. A worker claims jobs through a database lease token that fences stale workers from writing after a lease is recovered. Uploaded media is converted to mono 16 kHz PCM by FFmpeg, then transcribed locally by Vosk. FFmpeg and ffprobe use a fixed demuxer selected by the upload extension, a restricted protocol allowlist, and a timeout. The LLM normalizes the transcript and creates a structured note in separate logical stages. Stage instructions live in editable text files under `packages/llm/prompts`; set `PROMPTS_DIRECTORY` to use an alternate directory. Text input skips media conversion and speech recognition.
+Одноразовый контейнер миграций применяет изменения схемы до запуска API и worker. API проверяет запрос, сохраняет задание и предоставляет его состояние и результат. Worker получает задание через аренду, хранящуюся в базе данных. В производственном режиме методы работы с заданиями и библиотекой требуют общий токен Bearer; учётных записей нет.
 
-## Runtime boundaries
+Для видео и аудио FFmpeg преобразует дорожку в моно PCM 16 кГц, после чего Vosk локально распознаёт речь. Выбор демультиплексора фиксирован для расширения файла, список сетевых протоколов ограничен, а дочерние процессы имеют тайм-аут. LLM выполняет два отдельных этапа: нормализацию расшифровки и составление конспекта. При превышении контекстного окна текст разбивается на фрагменты; результаты фрагментов объединяются в общий конспект. Текстовый ввод проходит те же этапы, пропуская преобразование медиа и распознавание.
 
-- `apps/api`: HTTP, upload validation, Swagger, health, job submission/status/result.
-- `apps/worker`: queue polling, leases, retries, media and language-model orchestration.
-- `packages/database`: SQLite/PostgreSQL access and schema setup.
-- `packages/media`: media metadata, FFmpeg, Vosk.
-- `packages/llm`: Ollama and OpenAI-compatible adapters, prompts, chunking, output validation.
-- `packages/domain`: job types and note contract.
-- `packages/config`: environment parsing and startup validation.
+## Границы компонентов
 
-## Recovery and retention
+- `apps/api` — HTTP-маршруты, проверка загрузок, Swagger, диагностика и история браузерного SPA.
+- `apps/web` — русскоязычное SPA на Vue и Tailwind, библиотека конспектов и навигация по URL.
+- `apps/worker` — очередь, аренда заданий, повторы, обработка медиа и оркестрация вызовов LLM.
+- `packages/database` — доступ к SQLite и PostgreSQL, миграции и операции очереди и библиотеки.
+- `packages/media` — проверка медиафайлов, FFmpeg и Vosk.
+- `packages/llm` — провайдеры Ollama и OpenAI-compatible, шаблоны запросов, разбиение и проверка результатов.
+- `packages/domain` — состояния задания, типы конспектов и схема результата.
+- `packages/config` — чтение и проверка переменных среды при запуске.
 
-Workers renew their lease while active. Expired leases return to the queue until the maximum attempt count, then become terminal. Lease tokens ensure that workers with a recovered lease cannot overwrite the new owner's state. Failures are retried up to `JOB_MAX_ATTEMPTS`; terminal errors are stored internally and mapped to safe public messages. Uploaded media is deleted after transcription or terminal failure; old orphaned uploads are swept after `UPLOAD_ORPHAN_RETENTION_HOURS`. Job rows and text/results expire after `JOB_RETENTION_DAYS`.
+## Восстановление и хранение
 
-The Compose production overlay is a single-host deployment baseline. It does not configure TLS, managed secrets, PostgreSQL backups, or a distributed rate limiter; deploy behind an operator-managed TLS gateway and provide those platform controls before internet exposure.
+Worker регулярно продлевает аренду задания. Если срок аренды истёк, задание возвращается в очередь или переводится в окончательный сбой после достижения `JOB_MAX_ATTEMPTS`. Токен аренды не позволяет старому worker записать результат после того, как задание получил другой процесс. Повторы выполняются с настраиваемой задержкой.
+
+Исходный медиафайл удаляется сразу после успешного распознавания. При окончательном сбое он также удаляется, а код и безопасное описание ошибки остаются в записи задания. Задания, тексты и результаты удаляются по истечении `JOB_RETENTION_DAYS`. Сохранённые конспекты библиотеки имеют отдельный срок хранения: они остаются до ручного удаления. Worker также удаляет старые неиспользуемые файлы из каталога загрузок.
+
+## Выбор базы данных
+
+SQLite рассчитана на один локальный worker и удобна для личного использования. PostgreSQL обеспечивает безопасное распределение заданий между несколькими worker за счёт блокировок строк. Производительный Compose-файл задаёт базовые ограничения контейнеров для одного сервера, но сам по себе не настраивает TLS, управление секретами, резервное копирование PostgreSQL или распределённое ограничение запросов. Для публикации в сети эти меры должен предоставить оператор инфраструктуры.

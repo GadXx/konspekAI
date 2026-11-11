@@ -1,18 +1,20 @@
-# ADR 0002: Separate transcript normalization from note generation
+# ADR 0002: Разделение нормализации расшифровки и составления конспекта
 
-- Status: accepted
-- Date: 2026-11-11
+- Статус: принято
+- Дата: 2026-11-11
 
-## Context
+## Контекст
 
-Vosk returns a useful speech transcript but does not produce the polished sentence structure needed for a readable note. Combining transcript repair and summarization in one prompt makes it harder to inspect or reason about either result.
+Vosk распознаёт речь, но не оформляет её в читаемые предложения. Если одновременно просить модель исправить распознавание и составить конспект, трудно проверить и понять результат каждого этапа.
 
-## Decision
+## Решение
 
-After local Vosk transcription, a language-model pass restores punctuation and sentence boundaries while preserving content. A second logical pass creates a note from the normalized transcript. Both passes may make multiple calls when the configured context limit requires chunking. Intermediate text is retained for the configured job lifetime and returned only in development mode.
+После локального распознавания речи отдельный этап языковой модели восстанавливает пунктуацию и смысловые границы предложений, сохраняя содержание исходного текста. Следующий этап составляет структурированный конспект по нормализованной расшифровке. Если исходный материал не помещается в контекст модели, каждый этап может сделать несколько запросов по частям, а затем собрать общий результат. Шаблоны запросов хранятся в `packages/llm/prompts` и могут быть переопределены через `PROMPTS_DIRECTORY`.
 
-## Consequences
+Промежуточные тексты хранятся в базе в течение срока жизни задания и возвращаются клиенту только в режиме разработки.
 
-- The text-input path uses the same normalization and summary stages, skipping speech recognition.
-- Long transcripts may require additional language-model calls.
-- The final production response contains only the structured note.
+## Последствия
+
+- Текстовые запросы проходят те же два этапа, пропуская преобразование медиа и распознавание.
+- Длинный материал может потребовать дополнительных запросов к LLM.
+- Производственный ответ содержит только готовый структурированный конспект.

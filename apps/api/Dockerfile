@@ -7,8 +7,8 @@ COPY apps/web ./apps/web
 RUN npm run build:web
 
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl unzip ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN ARCH="$(dpkg --print-architecture)" && case "${ARCH}" in \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl unzip ca-certificates && \
+    ARCH="$(dpkg --print-architecture)" && case "${ARCH}" in \
       amd64) VOSK_ARCHIVE=vosk-linux-x86_64-0.3.45.zip ;; \
       arm64) VOSK_ARCHIVE=vosk-linux-aarch64-0.3.45.zip ;; \
       *) echo "Unsupported Vosk architecture: ${ARCH}" >&2; exit 1 ;; \
@@ -17,7 +17,9 @@ RUN ARCH="$(dpkg --print-architecture)" && case "${ARCH}" in \
     curl -fsSL "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/${VOSK_ARCHIVE}" -o /tmp/vosk.zip && \
     unzip -q /tmp/vosk.zip -d /tmp/vosk && \
     cp -a /tmp/vosk/vosk-linux-*/. /opt/vosk/ && \
-    rm -rf /tmp/vosk /tmp/vosk.zip
+    rm -rf /tmp/vosk /tmp/vosk.zip && \
+    apt-get purge -y --auto-remove curl unzip && \
+    rm -rf /var/lib/apt/lists/*
 ENV LD_LIBRARY_PATH=/opt/vosk
 WORKDIR /app
 COPY package*.json ./

@@ -1,10 +1,10 @@
-# Contributing
+# Участие в разработке
 
-1. Copy `.env.example` to `.env` and configure the local model endpoint.
-2. Install dependencies with `npm ci`.
-3. Run `npm run db:migrate` before starting the API or worker directly.
-4. Run `npm run lint` and `npm test` before submitting a change.
-5. Keep API behavior and OpenAPI documentation aligned.
-6. Add focused tests for changes to the job lifecycle, validation, and note schema.
+1. Скопируйте `.env.example` в `.env` и настройте адрес Ollama или выбранного API провайдера.
+2. Установите зависимости: `npm ci`.
+3. При запуске API и worker напрямую предварительно выполните миграции: `npm run db:migrate`.
+4. Перед отправкой изменений выполните `npm run lint` и `npm test`.
+5. Сохраняйте совместимость поведения API и документации OpenAPI/Swagger.
+6. Добавляйте адресные тесты для изменений очереди, валидации и структуры конспекта.
 
-GitHub Actions checks dependency advisories, lint, tests, Compose configuration, and a Docker image build. Dependabot opens weekly dependency update pull requests.
+GitHub Actions проверяет уязвимые зависимости, стиль кода, тесты, конфигурацию Compose и сборку Docker-образа. Dependabot еженедельно предлагает обновления зависимостей.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOpenAiCompatibleAdapter } from '../packages/llm/src/adapters/openai-compatible.js';
 
-test('NVIDIA-compatible adapter sends Nemotron thinking options for each pipeline stage', async () => {
+test('адаптер NVIDIA передаёт параметры рассуждения Nemotron на каждом этапе', async () => {
   const requests = [];
   const adapter = createOpenAiCompatibleAdapter({
     apiKey: 'test-key',
@@ -32,7 +32,7 @@ test('NVIDIA-compatible adapter sends Nemotron thinking options for each pipelin
   assert.equal('reasoning_budget' in requests[1], false);
 });
 
-test('compatible adapter reports exhausted output budget when provider omits content', async () => {
+test('совместимый адаптер сообщает об исчерпании лимита, если провайдер не вернул текст', async () => {
   const adapter = createOpenAiCompatibleAdapter({
     apiKey: 'test-key', modelFor: () => 'test-model', jsonMode: false,
     client: { chat: { completions: { create: async () => ({ choices: [{ finish_reason: 'length', message: { content: null } }] }) } }, models: { list: async () => ({}) } },

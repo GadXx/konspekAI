@@ -1,13 +1,14 @@
-# Domain glossary
+# Глоссарий предметной области
 
-| Term | Meaning |
+| Понятие | Значение |
 |---|---|
-| Job | One asynchronous request to create a note from text, audio, or video. A job owns its processing status and final result. |
-| Recognized text | Raw text produced by the speech recognition engine from uploaded audio/video. For text input, this is the submitted text. |
-| Normalized transcript | Recognized text with punctuation, casing, and meaningful sentence boundaries restored by the language model. |
-| Note | The final structured document containing a title, summary, sections, key points, and Markdown representation. |
-| Summary type | The requested level and shape of the note: `detailed`, `brief`, or `bullet_points`. |
-| Speech language | The language used to choose a configured Vosk model, supplied as `language`. |
-| Summary language | The output language requested for the note, supplied as `summary_language`; defaults to the speech language. |
-| Lease | A time-limited claim held by a worker while it processes a job. An expired lease allows another worker to retry the job. |
-| Development result | A result that includes the recognized text and normalized transcript in addition to the final note. |
+| Задание | Асинхронный запрос на создание конспекта по тексту, аудио- или видеозаписи. Задание хранит состояние обработки и временный результат. |
+| Распознанный текст | Необработанный текст, полученный Vosk из загруженной записи. Для текстового запроса содержит исходный текст пользователя. |
+| Нормализованная расшифровка | Распознанный текст с заглавными буквами, пунктуацией и смысловыми границами предложений, восстановленными языковой моделью. |
+| Конспект | Итоговый документ с заголовком, кратким содержанием, разделами, ключевыми тезисами и представлением в Markdown. |
+| Тип конспекта | Глубина и форма результата: `detailed`, `brief` или `bullet_points`. |
+| Язык речи | Язык исходной речи, передаваемый в поле `language`; по нему выбирается настроенная модель Vosk. |
+| Язык конспекта | Язык готового документа, передаваемый через `summary_language`. Если он не указан, берётся язык речи. |
+| Аренда | Ограниченное по времени право worker обрабатывать задание. После истечения аренды задание может получить другой worker. |
+| Режим разработки | Режим ответа API, в котором помимо конспекта возвращаются распознанный текст и нормализованная расшифровка. |
+| Библиотека | Постоянное локальное хранилище завершённых конспектов. Сейчас не разделяется между пользователями и не имеет автоматического срока удаления. |

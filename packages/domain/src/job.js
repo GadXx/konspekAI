@@ -29,17 +29,17 @@ export function publicStatus(job) {
 
 export function publicErrorMessage(code) {
   const safeMessages = {
-    INVALID_MEDIA_FILE: 'The uploaded media could not be decoded.',
-    MEDIA_DECODE_FAILED: 'The uploaded media could not be decoded.',
-    NO_SPEECH_DETECTED: 'No speech was detected in the uploaded media.',
-    PLACEHOLDER_TEXT: 'The source contains only a placeholder and cannot produce a useful note.',
-    MEDIA_MISSING: 'The uploaded media is no longer available.',
-    UNSUPPORTED_LANGUAGE: 'The requested speech language is not supported.',
-    ASR_MODEL_UNAVAILABLE: 'The speech recognition model is temporarily unavailable.',
-    SUMMARY_QUALITY_FAILED: 'The generated summary failed its language or structure checks.',
-    WORKER_LEASE_EXPIRED: 'The job could not be completed after repeated worker interruptions.',
+    INVALID_MEDIA_FILE: 'Не удалось обработать загруженный медиафайл.',
+    MEDIA_DECODE_FAILED: 'Не удалось обработать загруженный медиафайл.',
+    NO_SPEECH_DETECTED: 'В загруженной записи не удалось обнаружить речь.',
+    PLACEHOLDER_TEXT: 'Вместо исходного материала передан текст-заполнитель.',
+    MEDIA_MISSING: 'Загруженный медиафайл больше недоступен.',
+    UNSUPPORTED_LANGUAGE: 'Для выбранного языка речи не установлена модель распознавания.',
+    ASR_MODEL_UNAVAILABLE: 'Модель распознавания речи временно недоступна.',
+    SUMMARY_QUALITY_FAILED: 'Конспект не прошёл проверку языка или структуры.',
+    WORKER_LEASE_EXPIRED: 'Не удалось завершить задание после повторных прерываний обработки.',
   };
-  return safeMessages[code] ?? 'The job could not be completed. Contact the service operator with the job ID.';
+  return safeMessages[code] ?? 'Не удалось завершить задание. Передайте его идентификатор администратору сервиса.';
 }
 
 export function validateSummaryType(value) {

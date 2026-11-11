@@ -19,7 +19,7 @@ function loadConfig({ role, token, extra = {} }) {
   });
 }
 
-test('production API fails fast without a strong shared bearer token', () => {
+test('производственный API не запускается без надёжного общего токена Bearer', () => {
   const missing = loadConfig({ role: 'api', token: '' });
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /API_ACCESS_TOKEN/u);
@@ -27,16 +27,16 @@ test('production API fails fast without a strong shared bearer token', () => {
   assert.equal(valid.status, 0, valid.stderr);
 });
 
-test('production worker does not receive or require the API bearer token', () => {
+test('производственный worker не получает и не требует токен API', () => {
   const worker = loadConfig({ role: 'worker', token: '' });
   assert.equal(worker.status, 0, worker.stderr);
 });
 
-test('NVIDIA provider requires a key only in the worker and accepts the configured model', () => {
+test('провайдер NVIDIA требует ключ только для worker и принимает заданную модель', () => {
   const missing = loadConfig({ role: 'worker', token: '', extra: { LLM_PROVIDER: 'nvidia', NVIDIA_API_KEY: '' } });
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /NVIDIA_API_KEY/u);
-  const configured = loadConfig({ role: 'worker', token: '', extra: { LLM_PROVIDER: 'nvidia', NVIDIA_API_KEY: 'nvidia-test-key', NVIDIA_MODEL: 'mistralai/mistral-large-4-1t-a52b' } });
+  const configured = loadConfig({ role: 'worker', token: '', extra: { LLM_PROVIDER: 'nvidia', NVIDIA_API_KEY: 'nvidia-test-key', NVIDIA_MODEL: 'nvidia/nemotron-3.5-lightning-30b-a3b' } });
   assert.equal(configured.status, 0, configured.stderr);
   const api = loadConfig({ role: 'api', token: 'a'.repeat(48), extra: { LLM_PROVIDER: 'nvidia', NVIDIA_API_KEY: '' } });
   assert.equal(api.status, 0, api.stderr);

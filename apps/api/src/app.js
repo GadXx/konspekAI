@@ -32,23 +32,24 @@ import { hasValidBearerToken } from './auth.js';
 
 const ERROR_SCHEMA = {
   type: 'object',
-  properties: { error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] } },
+  properties: { error: { type: 'object', description: 'Описание ошибки API.', properties: { code: { type: 'string', description: 'Стабильный машинный код ошибки.' }, message: { type: 'string', description: 'Понятное описание ошибки на русском языке.' } }, required: ['code', 'message'] } },
   required: ['error'],
 };
 const WEB_DIRECTORY = fileURLToPath(new URL('../../web/dist/', import.meta.url));
 
 function unauthorized() {
-  return { error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required' } };
+  return { error: { code: 'UNAUTHORIZED', message: 'Для доступа требуется действительный токен Bearer' } };
 }
 
 const NOTE_SCHEMA = {
   type: 'object',
+  description: 'Структурированный конспект с Markdown-представлением.',
   properties: {
-    title: { type: 'string' },
-    summary: { type: 'string' },
-    sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, content: { type: 'string' } }, required: ['heading', 'content'] } },
-    key_points: { type: 'array', items: { type: 'string' } },
-    markdown: { type: 'string' },
+    title: { type: 'string', description: 'Заголовок конспекта.' },
+    summary: { type: 'string', description: 'Краткое содержание материала.' },
+    sections: { type: 'array', description: 'Тематические разделы в порядке изложения.', items: { type: 'object', properties: { heading: { type: 'string', description: 'Заголовок раздела.' }, content: { type: 'string', description: 'Содержание раздела.' } }, required: ['heading', 'content'] } },
+    key_points: { type: 'array', description: 'Основные выводы и факты.', items: { type: 'string' } },
+    markdown: { type: 'string', description: 'Готовое представление конспекта в Markdown.' },
   },
   required: ['title', 'summary', 'sections', 'key_points', 'markdown'],
 };
@@ -97,18 +98,18 @@ function parseField(fields, name, fallback) {
 function validateOptions(fields, { requiresSpeechModel }) {
   const language = parseField(fields, 'language', 'ru').toLowerCase();
   if (requiresSpeechModel && !availableVoskLanguages().includes(language)) {
-    throw apiError(400, 'UNSUPPORTED_LANGUAGE', `Language "${language}" has no installed Vosk model. Available languages: ${availableVoskLanguages().join(', ') || 'none'}`);
+    throw apiError(400, 'UNSUPPORTED_LANGUAGE', `Для языка «${language}» не установлена модель Vosk. Доступные языки: ${availableVoskLanguages().join(', ') || 'нет'}`);
   }
   if (!requiresSpeechModel && !/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(language)) {
-    throw apiError(400, 'INVALID_LANGUAGE', 'language must be a valid language code');
+    throw apiError(400, 'INVALID_LANGUAGE', 'Поле language должно содержать корректный код языка');
   }
   const summaryType = parseField(fields, 'summary_type', 'detailed');
   if (!SUMMARY_TYPES.includes(summaryType)) {
-    throw apiError(400, 'INVALID_SUMMARY_TYPE', `summary_type must be one of: ${SUMMARY_TYPES.join(', ')}`);
+    throw apiError(400, 'INVALID_SUMMARY_TYPE', `Поле summary_type должно иметь одно из значений: ${SUMMARY_TYPES.join(', ')}`);
   }
   const summaryLanguage = parseField(fields, 'summary_language', language);
   if (!/^[a-zA-Z][a-zA-Z0-9_-]{1,31}$/.test(summaryLanguage)) {
-    throw apiError(400, 'INVALID_SUMMARY_LANGUAGE', 'summary_language must be a short language code or name');
+    throw apiError(400, 'INVALID_SUMMARY_LANGUAGE', 'Поле summary_language должно содержать короткий код языка или его название');
   }
   return { language, summaryLanguage, summaryType };
 }
@@ -145,7 +146,7 @@ async function saveUploadedFile(part, id) {
   const originalName = basename(part.filename ?? 'upload').replace(/[\r\n\0]/g, '');
   const extension = extname(originalName).toLowerCase();
   if (!AUDIO_EXTENSIONS.has(extension) && !VIDEO_EXTENSIONS.has(extension)) {
-    throw apiError(415, 'UNSUPPORTED_MEDIA_TYPE', `Unsupported file extension "${extension || '(none)'}"`);
+    throw apiError(415, 'UNSUPPORTED_MEDIA_TYPE', `Формат файла «${extension || '(не указан)'}» не поддерживается`);
   }
   await mkdir(config.uploadDirectory, { recursive: true });
   const targetPath = join(config.uploadDirectory, `${id}${extension}`);
@@ -158,18 +159,18 @@ async function saveUploadedFile(part, id) {
   }
   if (part.file.truncated) {
     await rm(targetPath, { force: true });
-    throw apiError(413, 'UPLOAD_TOO_LARGE', `Media files may not exceed ${config.maxUploadBytes} bytes`);
+    throw apiError(413, 'UPLOAD_TOO_LARGE', `Размер медиафайла не должен превышать ${config.maxUploadBytes} байт`);
   }
   let duration;
   try {
     duration = await getMediaDuration(targetPath, config.ffmpegPath, config.mediaProbeTimeoutMs);
-  } catch (error) {
+  } catch {
     await rm(targetPath, { force: true });
-    throw apiError(400, 'INVALID_MEDIA_FILE', error.message);
+    throw apiError(400, 'INVALID_MEDIA_FILE', 'Не удалось прочитать медиафайл. Проверьте его формат и целостность.');
   }
   if (duration > config.maxMediaDurationSeconds) {
     await rm(targetPath, { force: true });
-    throw apiError(413, 'MEDIA_TOO_LONG', `Media duration exceeds ${config.maxMediaDurationSeconds} seconds`);
+    throw apiError(413, 'MEDIA_TOO_LONG', `Длительность записи превышает ${config.maxMediaDurationSeconds} секунд`);
   }
   return { targetPath, extension, duration };
 }
@@ -185,7 +186,7 @@ async function readSubmission(request) {
       for await (const part of request.parts()) {
         if (part.type === 'file') {
           if (sourcePath) {
-            throw apiError(400, 'TOO_MANY_FILES', 'Submit at most one media file');
+            throw apiError(400, 'TOO_MANY_FILES', 'Можно загрузить только один медиафайл');
           }
           const saved = await saveUploadedFile(part, id);
           sourcePath = saved.targetPath;
@@ -200,7 +201,7 @@ async function readSubmission(request) {
       text = body.text;
       Object.assign(fields, body);
     } else {
-      throw apiError(415, 'UNSUPPORTED_CONTENT_TYPE', 'Send application/json text or multipart/form-data media/text');
+      throw apiError(415, 'UNSUPPORTED_CONTENT_TYPE', 'Для текста используйте application/json, для файла — multipart/form-data');
     }
   } catch (error) {
     if (sourcePath) {
@@ -211,20 +212,20 @@ async function readSubmission(request) {
   try {
     const options = validateOptions(fields, { requiresSpeechModel: Boolean(sourcePath) });
     if (typeof text === 'string' && text.trim().length > 0 && sourcePath) {
-      throw apiError(400, 'AMBIGUOUS_INPUT', 'Submit either text or one media file, not both');
+      throw apiError(400, 'AMBIGUOUS_INPUT', 'Отправьте либо текст, либо один медиафайл');
     }
     if (typeof text === 'string' && text.trim().length > 0) {
       const trimmedText = text.trim();
       if (isPlaceholderText(trimmedText)) {
-        throw apiError(400, 'PLACEHOLDER_TEXT', 'Replace the placeholder with the actual source text or transcript');
+        throw apiError(400, 'PLACEHOLDER_TEXT', 'Замените текст-заполнитель настоящим текстом или расшифровкой записи');
       }
       if (trimmedText.length > config.maxTextChars) {
-        throw apiError(413, 'TEXT_TOO_LONG', `Text may not exceed ${config.maxTextChars} characters`);
+        throw apiError(413, 'TEXT_TOO_LONG', `Текст не должен превышать ${config.maxTextChars} символов`);
       }
       return createJobRecord({ id, inputKind: 'text', text: trimmedText, options });
     }
     if (!sourcePath) {
-      throw apiError(400, 'INPUT_REQUIRED', 'Provide non-empty text or one video/audio file');
+      throw apiError(400, 'INPUT_REQUIRED', 'Добавьте текст или один видео- либо аудиофайл');
     }
     return createJobRecord({ id, inputKind: VIDEO_EXTENSIONS.has(extension) ? 'video' : 'audio', sourcePath, options });
   } catch (error) {
@@ -242,8 +243,7 @@ export async function buildApp() {
     global: false,
     max: config.rateLimitMax,
     timeWindow: config.rateLimitWindowMs,
-    allowList: (request) => ['/healthz', '/readyz'].includes(request.url.split('?')[0]),
-    errorResponseBuilder: () => ({ statusCode: 429, error: 'Too Many Requests', message: 'Too many requests; retry after the rate limit window.' }),
+    errorResponseBuilder: () => ({ statusCode: 429, error: 'Слишком много запросов', message: 'Слишком много запросов на изменение данных. Повторите попытку позже.' }),
   });
   await app.register(multipart, {
     limits: { fileSize: config.maxUploadBytes, files: 2, fields: 12, fieldSize: 2048 },
@@ -253,9 +253,9 @@ export async function buildApp() {
       info: { title: 'KonspekAI API', description: 'Асинхронное создание структурированных конспектов из видео, аудио и текста.', version: '1.0.0' },
       components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'API token' } } },
       tags: [
-        { name: 'jobs', description: 'Создание и получение конспектов' },
-        { name: 'library', description: 'Постоянная библиотека сохранённых конспектов и папок' },
-        { name: 'meta', description: 'Справочная информация и проверка готовности' },
+        { name: 'Задания', description: 'Создание заданий и получение их результатов' },
+        { name: 'Библиотека', description: 'Постоянное хранение конспектов и папок' },
+        { name: 'Справка', description: 'Список языков и проверка готовности сервиса' },
       ],
     },
   });
@@ -274,7 +274,7 @@ export async function buildApp() {
   app.get('/assets/*', { schema: { hide: true } }, async (request, reply) => {
     const asset = request.params['*'];
     if (!/^[a-zA-Z0-9_./-]+$/.test(asset) || asset.split('/').includes('..')) {
-      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Asset not found' } });
+      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Файл интерфейса не найден' } });
     }
     try {
       const content = await readFile(join(WEB_DIRECTORY, 'assets', asset));
@@ -282,48 +282,51 @@ export async function buildApp() {
         : asset.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/octet-stream';
       return reply.type(contentType).header('cache-control', 'public, max-age=300').send(content);
     } catch {
-      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Asset not found' } });
+      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Файл интерфейса не найден' } });
     }
   });
 
   app.setErrorHandler((error, request, reply) => {
     if (error.statusCode === 429) {
-      return reply.code(429).send({ error: { code: 'RATE_LIMITED', message: 'Too many requests; retry after the rate limit window.' } });
+      return reply.code(429).send({ error: { code: 'RATE_LIMITED', message: 'Слишком много запросов на изменение данных. Повторите попытку позже.' } });
     }
     if (error.statusCode === 413 || error.code === 'FST_REQ_FILE_TOO_LARGE') {
-      return reply.code(413).send({ error: { code: 'UPLOAD_TOO_LARGE', message: `Media files may not exceed ${config.maxUploadBytes} bytes` } });
+      return reply.code(413).send({ error: { code: 'UPLOAD_TOO_LARGE', message: `Размер медиафайла не должен превышать ${config.maxUploadBytes} байт` } });
     }
     if (error.statusCode && error.statusCode < 500) {
-      return reply.code(error.statusCode).send({ error: { code: error.code ?? 'INVALID_REQUEST', message: error.message } });
+      const message = error.validation
+        ? 'Проверьте параметры запроса и соответствие данных формату API'
+        : error.message;
+      return reply.code(error.statusCode).send({ error: { code: error.code ?? 'INVALID_REQUEST', message } });
     }
     request.log.error({ err: error }, 'Request failed');
-    return reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+    return reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Произошла непредвиденная ошибка' } });
   });
 
-  app.get('/healthz', { schema: { tags: ['meta'], summary: 'Liveness probe', response: { 200: { type: 'object', properties: { status: { type: 'string' } }, required: ['status'] } } } }, async () => ({ status: 'ok' }));
-  app.get('/readyz', { schema: { tags: ['meta'], summary: 'Readiness probe', response: { 200: { type: 'object', properties: { status: { type: 'string' }, database: { type: 'string' }, llm_provider: { type: 'string' } }, required: ['status', 'database', 'llm_provider'] }, 503: ERROR_SCHEMA } } }, async (_request, reply) => {
+  app.get('/healthz', { schema: { tags: ['Справка'], summary: 'Проверка работоспособности', response: { 200: { type: 'object', properties: { status: { type: 'string' } }, required: ['status'] } } } }, async () => ({ status: 'ok' }));
+  app.get('/readyz', { schema: { tags: ['Справка'], summary: 'Проверка готовности к работе', response: { 200: { type: 'object', properties: { status: { type: 'string' }, database: { type: 'string' }, llm_provider: { type: 'string' } }, required: ['status', 'database', 'llm_provider'] }, 503: ERROR_SCHEMA } } }, async (_request, reply) => {
     try {
       await getDatabase().selectFrom('jobs').select('id').limit(1).execute();
       const provider = providerHealth();
       return { status: 'ready', database: 'ok', llm_provider: provider.provider };
     } catch {
-      return reply.code(503).send({ error: { code: 'NOT_READY', message: 'Required dependencies are unavailable' } });
+      return reply.code(503).send({ error: { code: 'NOT_READY', message: 'Не удалось подключиться к обязательным компонентам сервиса' } });
     }
   });
-  app.get('/api/v1/languages', { schema: { tags: ['meta'], summary: 'List available speech recognition languages', response: { 200: { type: 'object', properties: { languages: { type: 'array', items: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } } }, required: ['languages'] } } } }, async () => ({ languages: availableVoskLanguages().map((code) => ({ code })) }));
+  app.get('/api/v1/languages', { schema: { tags: ['Справка'], summary: 'Языки с установленными моделями распознавания', response: { 200: { type: 'object', properties: { languages: { type: 'array', items: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } } }, required: ['languages'] } } } }, async () => ({ languages: availableVoskLanguages().map((code) => ({ code })) }));
 
   app.get('/api/v1/library', {
     schema: {
-      tags: ['library'],
-      summary: 'List saved notes and folders',
+      tags: ['Библиотека'],
+      summary: 'Список сохранённых конспектов и папок',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
         properties: {
-          folder_id: { type: 'string', description: 'Filter by folder ID or "unfiled". Omit to list all notes.' },
-          q: { type: 'string', maxLength: 200, description: 'Search note titles and summaries.' },
-          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
-          offset: { type: 'integer', minimum: 0, default: 0 },
+          folder_id: { type: 'string', description: 'Идентификатор папки или значение unfiled для конспектов без папки. Если не задано, возвращаются все конспекты.' },
+          q: { type: 'string', maxLength: 200, description: 'Поиск по заголовкам и краткому содержанию.' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50, description: 'Количество элементов на странице.' },
+          offset: { type: 'integer', minimum: 0, default: 0, description: 'Число элементов, которое нужно пропустить.' },
         },
       },
       response: {
@@ -360,14 +363,14 @@ export async function buildApp() {
 
   app.get('/api/v1/library/notes/:id', {
     schema: {
-      tags: ['library'], summary: 'Get a saved note', security: [{ bearerAuth: [] }],
+      tags: ['Библиотека'], summary: 'Получить сохранённый конспект', security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
       response: { 200: { ...NOTE_SCHEMA, additionalProperties: true, properties: { ...NOTE_SCHEMA.properties, id: { type: 'string', format: 'uuid' }, folder_id: { type: ['string', 'null'], format: 'uuid' }, summary_type: { type: 'string', enum: SUMMARY_TYPES }, language: { type: 'string' }, summary_language: { type: 'string' }, created_at: { type: 'string', format: 'date-time' }, updated_at: { type: 'string', format: 'date-time' } } }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
     },
   }, async (request, reply) => {
     const note = await getLibraryNote(request.params.id);
     if (!note) {
-      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Конспект не найден или был удалён' } });
     }
     const { sections_json: _sectionsJson, key_points_json: _keyPointsJson, source_job_id: _sourceJobId, ...publicNote } = note;
     return publicNote;
@@ -375,11 +378,11 @@ export async function buildApp() {
 
   app.delete('/api/v1/library/notes/:id', {
     config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
-    schema: { tags: ['library'], summary: 'Delete a saved note permanently', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
+    schema: { tags: ['Библиотека'], summary: 'Удалить конспект без возможности восстановления', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA } },
   }, async (request, reply) => {
     const deleted = await deleteLibraryNote(request.params.id);
     if (Number(deleted.numDeletedRows) === 0) {
-      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Конспект не найден или был удалён' } });
     }
     return reply.code(204).send();
   });
@@ -387,21 +390,21 @@ export async function buildApp() {
   app.patch('/api/v1/library/notes/:id', {
     config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
-      tags: ['library'], summary: 'Move a saved note to a folder or to the unfiled section', security: [{ bearerAuth: [] }],
+      tags: ['Библиотека'], summary: 'Переместить конспект в папку или в раздел без папки', security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
       body: { type: 'object', properties: { folder_id: { type: ['string', 'null'], format: 'uuid' } }, required: ['folder_id'], additionalProperties: false },
-      response: { 200: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, folder_id: { type: ['string', 'null'], format: 'uuid' }, updated_at: { type: 'string', format: 'date-time' } }, required: ['id', 'updated_at'] }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+      response: { 200: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, folder_id: { type: ['string', 'null'], format: 'uuid' }, updated_at: { type: 'string', format: 'date-time' } }, required: ['id', 'updated_at'] }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA },
     },
   }, async (request, reply) => {
     if (request.body.folder_id) {
       const folder = await getDatabase().selectFrom('library_folders').select('id').where('id', '=', request.body.folder_id).executeTakeFirst();
       if (!folder) {
-        return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+        return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Папка не найдена или была удалена' } });
       }
     }
     const note = await moveLibraryNote(request.params.id, request.body.folder_id);
     if (!note) {
-      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Конспект не найден или был удалён' } });
     }
     return { id: note.id, folder_id: note.folder_id, updated_at: note.updated_at };
   });
@@ -409,14 +412,14 @@ export async function buildApp() {
   app.post('/api/v1/library/folders', {
     config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
-      tags: ['library'], summary: 'Create a library folder', security: [{ bearerAuth: [] }],
+      tags: ['Библиотека'], summary: 'Создать папку', security: [{ bearerAuth: [] }],
       body: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'], additionalProperties: false },
-      response: { 201: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+      response: { 201: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA },
     },
   }, async (request, reply) => {
     const name = request.body.name.trim();
     if (!name || name.length > 80) {
-      throw apiError(400, 'INVALID_FOLDER_NAME', 'Folder name must contain 1 to 80 characters');
+      throw apiError(400, 'INVALID_FOLDER_NAME', 'Название папки должно содержать от 1 до 80 символов');
     }
     return reply.code(201).send(await createLibraryFolder({ id: randomUUID(), name }));
   });
@@ -424,30 +427,30 @@ export async function buildApp() {
   app.patch('/api/v1/library/folders/:id', {
     config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
     schema: {
-      tags: ['library'], summary: 'Rename a library folder', security: [{ bearerAuth: [] }],
+      tags: ['Библиотека'], summary: 'Переименовать папку', security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
       body: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'], additionalProperties: false },
-      response: { 200: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+      response: { 200: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA },
     },
   }, async (request, reply) => {
     const name = request.body.name.trim();
     if (!name || name.length > 80) {
-      throw apiError(400, 'INVALID_FOLDER_NAME', 'Folder name must contain 1 to 80 characters');
+      throw apiError(400, 'INVALID_FOLDER_NAME', 'Название папки должно содержать от 1 до 80 символов');
     }
     const folder = await renameLibraryFolder(request.params.id, name);
     if (!folder) {
-      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Папка не найдена или была удалена' } });
     }
     return folder;
   });
 
   app.delete('/api/v1/library/folders/:id', {
     config: { rateLimit: { max: config.rateLimitMax, timeWindow: config.rateLimitWindowMs } },
-    schema: { tags: ['library'], summary: 'Permanently delete a folder and all saved notes inside it', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
+    schema: { tags: ['Библиотека'], summary: 'Удалить папку и все конспекты в ней без возможности восстановления', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'], description: 'Идентификатор папки в формате UUID.' }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA } },
   }, async (request, reply) => {
     const deleted = await deleteLibraryFolder(request.params.id);
     if (Number(deleted.numDeletedRows) === 0) {
-      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Папка не найдена или была удалена' } });
     }
     return reply.code(204).send();
   });
@@ -457,10 +460,10 @@ export async function buildApp() {
     // Multipart streams have no parsed request.body; validate the request in readSubmission instead.
     validatorCompiler: () => (data) => ({ value: data }),
     schema: {
-      tags: ['jobs'],
-      summary: 'Create a note generation job',
+      tags: ['Задания'],
+      summary: 'Создать задание на составление конспекта',
       security: [{ bearerAuth: [] }],
-      description: `JSON accepts text; multipart accepts one media file or text. Supported file extensions: ${[...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS].join(', ')}. Maximum upload size: ${config.maxUploadBytes} bytes; maximum media duration: ${config.maxMediaDurationSeconds} seconds; maximum text length: ${config.maxTextChars} characters. For media, language must have an installed Vosk model. summary_language defaults to language.`,
+      description: `Отправьте текст в формате JSON или один видео-/аудиофайл через multipart/form-data. Поддерживаемые расширения: ${[...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS].join(', ')}. Максимальный размер файла: ${config.maxUploadBytes} байт; максимальная длительность записи: ${config.maxMediaDurationSeconds} секунд; максимальный объём текста: ${config.maxTextChars} символов. Для медиафайла требуется установленная модель Vosk для выбранного языка. Если summary_language не задано, используется language.`,
       consumes: ['application/json', 'multipart/form-data'],
       body: {
         type: 'object',
@@ -468,12 +471,12 @@ export async function buildApp() {
           text: {
             type: 'string', maxLength: config.maxTextChars,
             example: 'Искусственный интеллект помогает анализировать данные. Результаты нужно проверять перед использованием.',
-            description: 'Actual source text or transcript. Placeholder values such as "string" and "test" are rejected.',
+            description: 'Исходный текст или расшифровка записи. Тестовые значения и заполнители, например string и test, отклоняются.',
           },
-          language: { type: 'string', default: 'ru', description: 'Input speech language and installed Vosk model code.' },
-          summary_language: { type: 'string', description: 'Language of the generated note; defaults to language.' },
-          summary_type: { type: 'string', enum: SUMMARY_TYPES, default: 'detailed' },
-          media: { type: 'string', format: 'binary' },
+          language: { type: 'string', default: 'ru', description: 'Язык исходной речи и код установленной модели Vosk.' },
+          summary_language: { type: 'string', description: 'Язык готового конспекта. По умолчанию совпадает с language.' },
+          summary_type: { type: 'string', enum: SUMMARY_TYPES, default: 'detailed', description: 'Глубина и форма конспекта.' },
+          media: { type: 'string', format: 'binary', description: 'Один видео- или аудиофайл допустимого формата.' },
         },
       },
       response: {
@@ -500,24 +503,24 @@ export async function buildApp() {
 
   app.get('/api/v1/jobs/:id', {
     schema: {
-      tags: ['jobs'],
-      summary: 'Get job status',
+      tags: ['Задания'],
+      summary: 'Получить состояние задания',
       security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
-      response: { 200: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['queued', 'processing', 'completed', 'failed'] }, progress: { type: 'string' }, attempt: { type: 'integer' }, created_at: { type: 'string' }, updated_at: { type: 'string' }, expires_at: { type: 'string' }, error: ERROR_SCHEMA.properties.error }, required: ['id', 'status', 'progress', 'attempt', 'created_at', 'updated_at', 'expires_at'] }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA, 429: ERROR_SCHEMA },
+      response: { 200: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['queued', 'processing', 'completed', 'failed'] }, progress: { type: 'string' }, attempt: { type: 'integer' }, created_at: { type: 'string' }, updated_at: { type: 'string' }, expires_at: { type: 'string' }, error: ERROR_SCHEMA.properties.error }, required: ['id', 'status', 'progress', 'attempt', 'created_at', 'updated_at', 'expires_at'] }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
     },
   }, async (request, reply) => {
     const job = await getJob(request.params.id);
     if (!job) {
-      return reply.code(404).send({ error: { code: 'JOB_NOT_FOUND', message: 'Job does not exist or has expired' } });
+      return reply.code(404).send({ error: { code: 'JOB_NOT_FOUND', message: 'Задание не найдено или срок его хранения истёк' } });
     }
     return publicStatus(job);
   });
 
   app.get('/api/v1/jobs/:id/result', {
     schema: {
-      tags: ['jobs'],
-      summary: 'Get generated note',
+      tags: ['Задания'],
+      summary: 'Получить готовый конспект',
       security: [{ bearerAuth: [] }],
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
       response: {
@@ -533,19 +536,18 @@ export async function buildApp() {
         404: ERROR_SCHEMA,
         409: ERROR_SCHEMA,
         401: ERROR_SCHEMA,
-        429: ERROR_SCHEMA,
       },
     },
   }, async (request, reply) => {
     const job = await getJob(request.params.id);
     if (!job) {
-      return reply.code(404).send({ error: { code: 'JOB_NOT_FOUND', message: 'Job does not exist or has expired' } });
+      return reply.code(404).send({ error: { code: 'JOB_NOT_FOUND', message: 'Задание не найдено или срок его хранения истёк' } });
     }
     if (job.status === 'failed') {
       return reply.code(409).send({ error: { code: job.error_code, message: publicErrorMessage(job.error_code) } });
     }
     if (job.status !== 'completed') {
-      return reply.code(409).send({ error: { code: 'JOB_NOT_COMPLETED', message: `Job is currently ${job.status}` } });
+      return reply.code(409).send({ error: { code: 'JOB_NOT_COMPLETED', message: `Задание ещё выполняется. Текущее состояние: ${job.status}` } });
     }
     const note = JSON.parse(job.note_json);
     if (!job.dev_mode) {
@@ -563,7 +565,7 @@ export async function buildApp() {
     if (request.method === 'GET' && (/^\/library\/?$/.test(pathname) || /^\/library\/notes\/[^/]+\/?$/.test(pathname))) {
       return reply.type('text/html; charset=utf-8').send(await readFile(join(WEB_DIRECTORY, 'index.html')));
     }
-    return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+    return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Маршрут не найден' } });
   });
 
   app.addHook('onClose', async () => {
