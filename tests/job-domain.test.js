@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SUMMARY_TYPES, publicStatus, validateNote, validateSummaryType } from '../packages/domain/src/job.js';
+import { SUMMARY_TYPES, isPlaceholderText, publicStatus, validateNote, validateSummaryType } from '../packages/domain/src/job.js';
+
+test('placeholder detection catches common API defaults without rejecting source text', () => {
+  assert.equal(isPlaceholderText('"string"'), true);
+  assert.equal(isPlaceholderText('TEST.'), true);
+  assert.equal(isPlaceholderText('Тема лекции о строковом типе данных.'), false);
+});
 import { hasValidBearerToken } from '../apps/api/src/auth.js';
 
 test('summary types match the public contract', () => {

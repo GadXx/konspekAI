@@ -2,6 +2,15 @@ export const SUMMARY_TYPES = Object.freeze(['detailed', 'brief', 'bullet_points'
 export const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.flac', '.wma']);
 export const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm', '.avi', '.m4v']);
 
+export function isPlaceholderText(text) {
+  const normalized = text.trim().toLowerCase()
+    .replace(/^[\s"'`«»]+|[\s"'`«»]+$/gu, '')
+    .replace(/[.,!?;:()[\]{}<>]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return new Set(['string', 'text', 'test', 'example', 'sample', 'your text', 'lorem ipsum', 'foo', 'bar', 'null', 'undefined']).has(normalized);
+}
+
 export function publicStatus(job) {
   const result = {
     id: job.id,
@@ -23,6 +32,7 @@ export function publicErrorMessage(code) {
     INVALID_MEDIA_FILE: 'The uploaded media could not be decoded.',
     MEDIA_DECODE_FAILED: 'The uploaded media could not be decoded.',
     NO_SPEECH_DETECTED: 'No speech was detected in the uploaded media.',
+    PLACEHOLDER_TEXT: 'The source contains only a placeholder and cannot produce a useful note.',
     MEDIA_MISSING: 'The uploaded media is no longer available.',
     UNSUPPORTED_LANGUAGE: 'The requested speech language is not supported.',
     ASR_MODEL_UNAVAILABLE: 'The speech recognition model is temporarily unavailable.',

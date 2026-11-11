@@ -44,6 +44,14 @@ test('text submission returns an asynchronous job and can be claimed by a worker
   assert.equal(result.json().title, note.title);
 });
 
+test('placeholder text is rejected instead of creating a meaningless note job', async () => {
+  const response = await app.inject({
+    method: 'POST', url: '/api/v1/jobs', payload: { text: 'string' },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.json().error.code, 'PLACEHOLDER_TEXT');
+});
+
 test('invalid language and unsupported media extensions are rejected', async () => {
   const language = await app.inject({
     method: 'POST', url: '/api/v1/jobs', payload: { text: 'Текст', language: '%' },

@@ -4,6 +4,7 @@ import { config } from '../../../packages/config/src/config.js';
 import { transcribeMedia } from '../../../packages/media/src/transcribe.js';
 import { createSummary, normalizeTranscript } from '../../../packages/llm/src/pipeline.js';
 import { isPathInUploadDirectory } from '../../../packages/media/src/path.js';
+import { isPlaceholderText } from '../../../packages/domain/src/job.js';
 
 async function removeSource(sourcePath) {
   if (sourcePath && isPathInUploadDirectory(sourcePath)) {
@@ -67,6 +68,10 @@ export async function processJob(claimedJob, logger = console) {
       sourcePath = null;
     }
 
+    if (isPlaceholderText(recognizedText)) {
+      throw Object.assign(new Error('The input contains only placeholder text'), { code: 'PLACEHOLDER_TEXT' });
+    }
+
     await updateOwnedJob({ progress: 'normalizing_transcript' });
     const normalizedTranscript = current?.normalized_transcript
       ?? await normalizeTranscript(recognizedText, claimedJob.language);
@@ -94,7 +99,7 @@ export async function processJob(claimedJob, logger = console) {
     if (!current || current.lease_token !== claimedJob.lease_token) {
       return;
     }
-    const nonRetryableCodes = new Set(['UNSUPPORTED_LANGUAGE', 'ASR_MODEL_UNAVAILABLE', 'MEDIA_MISSING', 'NO_SPEECH_DETECTED', 'INVALID_MEDIA_FILE', 'MEDIA_DECODE_FAILED']);
+    const nonRetryableCodes = new Set(['UNSUPPORTED_LANGUAGE', 'ASR_MODEL_UNAVAILABLE', 'MEDIA_MISSING', 'NO_SPEECH_DETECTED', 'PLACEHOLDER_TEXT', 'INVALID_MEDIA_FILE', 'MEDIA_DECODE_FAILED']);
     const isTerminal = current.attempt_count >= config.jobMaxAttempts || nonRetryableCodes.has(error.code);
     const retryDelay = config.jobRetryBaseMs * (2 ** Math.max(0, current.attempt_count - 1));
     if (isTerminal && sourcePath) {

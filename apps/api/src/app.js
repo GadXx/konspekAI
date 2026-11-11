@@ -10,7 +10,7 @@ import { basename, extname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { config } from '../../../packages/config/src/config.js';
 import { getDatabase, getJob, enqueueJob } from '../../../packages/database/src/database.js';
-import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, SUMMARY_TYPES, publicErrorMessage, publicStatus } from '../../../packages/domain/src/job.js';
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, SUMMARY_TYPES, isPlaceholderText, publicErrorMessage, publicStatus } from '../../../packages/domain/src/job.js';
 import { getMediaDuration } from '../../../packages/media/src/inspect.js';
 import { availableVoskLanguages } from '../../../packages/media/src/models.js';
 import { providerHealth } from '../../../packages/llm/src/provider.js';
@@ -174,6 +174,9 @@ async function readSubmission(request) {
     }
     if (typeof text === 'string' && text.trim().length > 0) {
       const trimmedText = text.trim();
+      if (isPlaceholderText(trimmedText)) {
+        throw apiError(400, 'PLACEHOLDER_TEXT', 'Replace the placeholder with the actual source text or transcript');
+      }
       if (trimmedText.length > config.maxTextChars) {
         throw apiError(413, 'TEXT_TOO_LONG', `Text may not exceed ${config.maxTextChars} characters`);
       }
@@ -260,7 +263,11 @@ export async function buildApp() {
       body: {
         type: 'object',
         properties: {
-          text: { type: 'string', maxLength: config.maxTextChars },
+          text: {
+            type: 'string', maxLength: config.maxTextChars,
+            example: 'Искусственный интеллект помогает анализировать данные. Результаты нужно проверять перед использованием.',
+            description: 'Actual source text or transcript. Placeholder values such as "string" and "test" are rejected.',
+          },
           language: { type: 'string', default: 'ru', description: 'Input speech language and installed Vosk model code.' },
           summary_language: { type: 'string', description: 'Language of the generated note; defaults to language.' },
           summary_type: { type: 'string', enum: SUMMARY_TYPES, default: 'detailed' },
