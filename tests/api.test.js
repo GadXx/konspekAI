@@ -2,7 +2,17 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import { buildApp } from '../apps/api/src/app.js';
-import { closeDatabase, getJob, claimNextJob, updateJob, updateClaimedJob, recoverExpiredLeases, migrate } from '../packages/database/src/database.js';
+import {
+  closeDatabase,
+  completeClaimedJob,
+  deleteExpiredJobs,
+  getJob,
+  claimNextJob,
+  updateJob,
+  updateClaimedJob,
+  recoverExpiredLeases,
+  migrate,
+} from '../packages/database/src/database.js';
 
 await migrate();
 const app = await buildApp();
@@ -16,23 +26,86 @@ test('health and language routes are available', async () => {
   assert.equal(languages.json().languages[0].code, 'ru');
 });
 
-test('browser interface and its assets are served by the API', async () => {
+test('Vue browser interface and built assets are served by the API', async () => {
   const page = await app.inject({ method: 'GET', url: '/' });
   assert.equal(page.statusCode, 200);
   assert.match(page.headers['content-type'], /text\/html/u);
-  assert.match(page.body, /Создать конспект/u);
+  assert.match(page.body, /id="app"/u);
+  const scriptPath = page.body.match(/src="([^"]+\.js)"/u)?.[1];
+  const stylesPath = page.body.match(/href="([^"]+\.css)"/u)?.[1];
+  assert.ok(scriptPath);
+  assert.ok(stylesPath);
 
-  const script = await app.inject({ method: 'GET', url: '/assets/app.js' });
+  const script = await app.inject({ method: 'GET', url: scriptPath });
   assert.equal(script.statusCode, 200);
   assert.match(script.headers['content-type'], /javascript/u);
-  assert.match(script.body, /renderNote/u);
+  assert.ok(script.body.length > 1000);
 
-  const styles = await app.inject({ method: 'GET', url: '/assets/styles.css' });
+  const styles = await app.inject({ method: 'GET', url: stylesPath });
   assert.equal(styles.statusCode, 200);
   assert.match(styles.headers['content-type'], /text\/css/u);
 
-  const missing = await app.inject({ method: 'GET', url: '/assets/../app.js' });
+  const missing = await app.inject({ method: 'GET', url: '/assets/..%2Fapp.js' });
   assert.equal(missing.statusCode, 404);
+});
+
+test('completed notes are saved permanently in the library and folder deletion cascades', async () => {
+  const folderResponse = await app.inject({ method: 'POST', url: '/api/v1/library/folders', payload: { name: 'Философия' } });
+  assert.equal(folderResponse.statusCode, 201);
+  let folder = folderResponse.json();
+  const renameResponse = await app.inject({ method: 'PATCH', url: `/api/v1/library/folders/${folder.id}`, payload: { name: 'Философия и теория' } });
+  assert.equal(renameResponse.statusCode, 200);
+  folder = renameResponse.json();
+  assert.equal(folder.name, 'Философия и теория');
+
+  const createdJob = await app.inject({ method: 'POST', url: '/api/v1/jobs', payload: { text: 'Материал о философии.' } });
+  const job = await getJob(createdJob.json().id);
+  const claimed = await claimNextJob({ leaseSeconds: 60 });
+  const summary = {
+    title: 'Философия', summary: 'Краткое содержание.', sections: [{ heading: 'Тема', content: 'Материал.' }],
+    key_points: ['Главная мысль.'], markdown: '# Философия',
+  };
+  await completeClaimedJob({ id: job.id, leaseToken: claimed.lease_token, note: summary });
+
+  const initialLibrary = await app.inject({ method: 'GET', url: '/api/v1/library' });
+  assert.equal(initialLibrary.statusCode, 200);
+  assert.equal(initialLibrary.json().all_count, 1);
+  assert.equal(initialLibrary.json().unfiled_count, 1);
+  const [savedNote] = initialLibrary.json().notes;
+
+  const move = await app.inject({ method: 'PATCH', url: `/api/v1/library/notes/${savedNote.id}`, payload: { folder_id: folder.id } });
+  assert.equal(move.statusCode, 200);
+  assert.equal(move.json().folder_id, folder.id);
+
+  const past = new Date(Date.now() - 1000).toISOString();
+  await updateJob(job.id, { expires_at: past });
+  assert.equal((await deleteExpiredJobs()).length, 1);
+  assert.equal(await getJob(job.id), undefined);
+  const storedLibrary = await app.inject({ method: 'GET', url: `/api/v1/library?folder_id=${folder.id}` });
+  assert.equal(storedLibrary.json().total, 1);
+  assert.equal(storedLibrary.json().notes[0].title, 'Философия');
+
+  const secondJobResponse = await app.inject({ method: 'POST', url: '/api/v1/jobs', payload: { text: 'Второй материал.' } });
+  const secondJob = await getJob(secondJobResponse.json().id);
+  const secondClaim = await claimNextJob({ leaseSeconds: 60 });
+  await completeClaimedJob({
+    id: secondJob.id,
+    leaseToken: secondClaim.lease_token,
+    note: { ...summary, title: 'Второй конспект' },
+  });
+  const notesBeforeDelete = await app.inject({ method: 'GET', url: '/api/v1/library?folder_id=unfiled' });
+  const unfiledNote = notesBeforeDelete.json().notes[0];
+  assert.equal(notesBeforeDelete.json().total, 1);
+  const deletedNote = await app.inject({ method: 'DELETE', url: `/api/v1/library/notes/${unfiledNote.id}` });
+  assert.equal(deletedNote.statusCode, 204);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/v1/library' })).json().all_count, 1);
+
+  const deletedFolder = await app.inject({ method: 'DELETE', url: `/api/v1/library/folders/${folder.id}` });
+  assert.equal(deletedFolder.statusCode, 204);
+  const emptyLibrary = await app.inject({ method: 'GET', url: '/api/v1/library' });
+  assert.equal(emptyLibrary.json().all_count, 0);
+  const missingNote = await app.inject({ method: 'GET', url: `/api/v1/library/notes/${savedNote.id}` });
+  assert.equal(missingNote.statusCode, 404);
 });
 
 test('text submission returns an asynchronous job and can be claimed by a worker', async () => {

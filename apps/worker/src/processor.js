@@ -1,5 +1,5 @@
 import { rm } from 'node:fs/promises';
-import { getDatabase, getJob, updateClaimedJob } from '../../../packages/database/src/database.js';
+import { completeClaimedJob, getDatabase, getJob, updateClaimedJob } from '../../../packages/database/src/database.js';
 import { config } from '../../../packages/config/src/config.js';
 import { transcribeMedia } from '../../../packages/media/src/transcribe.js';
 import { createSummary, normalizeTranscript } from '../../../packages/llm/src/pipeline.js';
@@ -80,15 +80,12 @@ export async function processJob(claimedJob, logger = console) {
       summaryType: claimedJob.summary_type,
       summaryLanguage: claimedJob.summary_language,
     });
-    await updateOwnedJob({
-      status: 'completed',
-      progress: 'completed',
-      note_json: JSON.stringify(note),
-      error_code: null,
-      error_message: null,
-      lease_expires_at: null,
-      lease_token: null,
-    });
+    const completed = await completeClaimedJob({ id: claimedJob.id, leaseToken: claimedJob.lease_token, note }, database);
+    if (!completed) {
+      const error = new Error('The job lease is no longer owned by this worker');
+      error.code = 'JOB_LEASE_LOST';
+      throw error;
+    }
   } catch (error) {
     if (error.code === 'JOB_LEASE_LOST') {
       logger.info?.({ jobId: claimedJob.id }, 'Stopped processing after losing the job lease');

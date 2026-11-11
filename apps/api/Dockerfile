@@ -1,3 +1,11 @@
+FROM node:22-bookworm-slim AS web-build
+WORKDIR /build
+COPY package*.json ./
+RUN npm ci
+COPY vite.config.js ./
+COPY apps/web ./apps/web
+RUN npm run build:web
+
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl unzip ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN ARCH="$(dpkg --print-architecture)" && case "${ARCH}" in \
@@ -16,6 +24,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY apps ./apps
 COPY packages ./packages
+COPY --from=web-build /build/apps/web/dist ./apps/web/dist
 RUN mkdir -p /data/uploads /models && chown -R node:node /data /models
 ENV NODE_ENV=production
 USER node

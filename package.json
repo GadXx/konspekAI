@@ -7,10 +7,11 @@
     "node": ">=22"
   },
   "scripts": {
+    "build:web": "vite build",
     "start:api": "node apps/api/src/main.js",
     "start:worker": "node apps/worker/src/main.js",
     "lint": "eslint .",
-    "test": "node --import ./tests/setup.js --test tests/*.test.js",
+    "test": "npm run build:web && node --import ./tests/setup.js --test tests/*.test.js",
     "db:migrate": "node packages/database/src/migrate.js"
   },
   "dependencies": {
@@ -25,9 +26,14 @@
     "kysely": "^0.28.8",
     "ollama": "^0.6.2",
     "openai": "^5.20.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "vue": "^3.5.45"
   },
   "devDependencies": {
-    "eslint": "^9.35.0"
+    "@tailwindcss/vite": "^4.3.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "eslint": "^9.35.0",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.7"
   }
 }

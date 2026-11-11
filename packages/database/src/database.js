@@ -7,6 +7,7 @@ import pg from 'pg';
 import { config } from '../../config/src/config.js';
 import * as jobsMigration from '../migrations/001_create_jobs.js';
 import * as leaseTokenMigration from '../migrations/002_add_job_lease_token.js';
+import * as libraryMigration from '../migrations/003_create_library.js';
 
 let database;
 
@@ -43,6 +44,7 @@ export async function migrate(databaseHandle = getDatabase()) {
       getMigrations: async () => ({
       '001_create_jobs': { up: jobsMigration.up, down: jobsMigration.down },
       '002_add_job_lease_token': { up: leaseTokenMigration.up, down: leaseTokenMigration.down },
+      '003_create_library': { up: libraryMigration.up, down: libraryMigration.down },
       }),
     },
   });
@@ -118,6 +120,141 @@ export async function updateClaimedJob(id, leaseToken, fields, databaseHandle = 
     .where('lease_token', '=', leaseToken)
     .returningAll()
     .executeTakeFirst();
+}
+
+export async function completeClaimedJob({ id, leaseToken, note }, databaseHandle = getDatabase()) {
+  const now = new Date().toISOString();
+  return databaseHandle.transaction().execute(async (transaction) => {
+    const completed = await transaction
+      .updateTable('jobs')
+      .set({
+        status: 'completed',
+        progress: 'completed',
+        note_json: JSON.stringify(note),
+        error_code: null,
+        error_message: null,
+        lease_expires_at: null,
+        lease_token: null,
+        updated_at: now,
+      })
+      .where('id', '=', id)
+      .where('status', '=', 'processing')
+      .where('lease_token', '=', leaseToken)
+      .returningAll()
+      .executeTakeFirst();
+
+    if (!completed) {
+      return undefined;
+    }
+
+    await transaction.insertInto('library_notes').values({
+      id: randomUUID(),
+      source_job_id: id,
+      folder_id: null,
+      title: note.title,
+      summary: note.summary,
+      sections_json: JSON.stringify(note.sections),
+      key_points_json: JSON.stringify(note.key_points),
+      markdown: note.markdown,
+      summary_type: completed.summary_type,
+      language: completed.language,
+      summary_language: completed.summary_language,
+      created_at: now,
+      updated_at: now,
+    }).execute();
+
+    return completed;
+  });
+}
+
+export async function listLibraryFolders(databaseHandle = getDatabase()) {
+  const rows = await databaseHandle
+    .selectFrom('library_folders')
+    .leftJoin('library_notes', 'library_notes.folder_id', 'library_folders.id')
+    .select([
+      'library_folders.id as id',
+      'library_folders.name as name',
+      'library_folders.created_at as created_at',
+      'library_folders.updated_at as updated_at',
+      (expression) => expression.fn.count('library_notes.id').as('note_count'),
+    ])
+    .groupBy(['library_folders.id', 'library_folders.name', 'library_folders.created_at', 'library_folders.updated_at'])
+    .orderBy('library_folders.name', 'asc')
+    .execute();
+  return rows.map((row) => ({ ...row, note_count: Number(row.note_count) }));
+}
+
+export async function listLibraryNotes({ folderId, query, limit = 100, offset = 0 }, databaseHandle = getDatabase()) {
+  let selection = databaseHandle.selectFrom('library_notes').select([
+    'id', 'folder_id', 'title', 'summary', 'summary_type', 'language', 'summary_language', 'created_at', 'updated_at',
+  ]);
+  if (folderId === 'unfiled') {
+    selection = selection.where('folder_id', 'is', null);
+  } else if (folderId) {
+    selection = selection.where('folder_id', '=', folderId);
+  }
+  if (query) {
+    const pattern = `%${query}%`;
+    selection = selection.where((expression) => expression.or([
+      expression('title', 'like', pattern),
+      expression('summary', 'like', pattern),
+    ]));
+  }
+  return selection.orderBy('updated_at', 'desc').limit(limit).offset(offset).execute();
+}
+
+export async function countLibraryNotes({ folderId, query } = {}, databaseHandle = getDatabase()) {
+  let selection = databaseHandle.selectFrom('library_notes').select((expression) => expression.fn.countAll().as('total'));
+  if (folderId === 'unfiled') {
+    selection = selection.where('folder_id', 'is', null);
+  } else if (folderId) {
+    selection = selection.where('folder_id', '=', folderId);
+  }
+  if (query) {
+    const pattern = `%${query}%`;
+    selection = selection.where((expression) => expression.or([
+      expression('title', 'like', pattern),
+      expression('summary', 'like', pattern),
+    ]));
+  }
+  const result = await selection.executeTakeFirst();
+  return Number(result.total);
+}
+
+export async function getLibraryNote(id, databaseHandle = getDatabase()) {
+  const note = await databaseHandle.selectFrom('library_notes').selectAll().where('id', '=', id).executeTakeFirst();
+  if (!note) {
+    return undefined;
+  }
+  return {
+    ...note,
+    sections: JSON.parse(note.sections_json),
+    key_points: JSON.parse(note.key_points_json),
+  };
+}
+
+export async function createLibraryFolder({ id, name }, databaseHandle = getDatabase()) {
+  const now = new Date().toISOString();
+  await databaseHandle.insertInto('library_folders').values({ id, name, created_at: now, updated_at: now }).execute();
+  return { id, name, created_at: now, updated_at: now, note_count: 0 };
+}
+
+export async function renameLibraryFolder(id, name, databaseHandle = getDatabase()) {
+  return databaseHandle.updateTable('library_folders').set({ name, updated_at: new Date().toISOString() })
+    .where('id', '=', id).returningAll().executeTakeFirst();
+}
+
+export async function deleteLibraryFolder(id, databaseHandle = getDatabase()) {
+  return databaseHandle.deleteFrom('library_folders').where('id', '=', id).executeTakeFirst();
+}
+
+export async function moveLibraryNote(id, folderId, databaseHandle = getDatabase()) {
+  return databaseHandle.updateTable('library_notes').set({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .where('id', '=', id).returningAll().executeTakeFirst();
+}
+
+export async function deleteLibraryNote(id, databaseHandle = getDatabase()) {
+  return databaseHandle.deleteFrom('library_notes').where('id', '=', id).executeTakeFirst();
 }
 
 export async function updateJob(id, fields, databaseHandle = getDatabase()) {

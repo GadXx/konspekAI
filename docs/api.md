@@ -2,7 +2,7 @@
 
 Swagger UI: [`/docs`](http://localhost:3000/docs). OpenAPI JSON: [`/openapi.json`](http://localhost:3000/openapi.json).
 
-In production, send `Authorization: Bearer <API_ACCESS_TOKEN>` with every `/api/v1/jobs` request. The API uses one shared machine token and does not create user accounts. `/healthz`, `/readyz`, `/api/v1/languages`, and API documentation remain public.
+In production, send `Authorization: Bearer <API_ACCESS_TOKEN>` with every `/api/v1/jobs` and `/api/v1/library` request. The API uses one shared machine token and does not create user accounts. `/healthz`, `/readyz`, `/api/v1/languages`, and API documentation remain public.
 
 The worker can use NVIDIA's OpenAI-compatible chat completions endpoint by setting `LLM_PROVIDER=nvidia` and `NVIDIA_API_KEY` in `.env`. The default model is `mistralai/mistral-large-4-1t-a52b`; configure `NVIDIA_MODEL` and `NVIDIA_REASONING_EFFORT` as needed. The NVIDIA API key is passed only to the worker container.
 
@@ -29,6 +29,18 @@ Response: `202 Accepted` with `id`, `status_url`, and `result_url`.
 - `GET /api/v1/jobs/{id}/result` returns `409` while the job is not complete. In production it returns only the note. In development it also includes `recognized_text` and `normalized_transcript`.
 - `GET /api/v1/languages` lists configured Vosk languages.
 - `GET /healthz` and `GET /readyz` are liveness/readiness checks.
+
+## Personal library
+
+Every completed job is automatically copied to the persistent library. Library notes are independent of the temporary job retention period and remain until deleted. The local application currently has one library and no accounts.
+
+- `GET /api/v1/library` returns folders and a page of notes. Use `folder_id=unfiled` for notes without a folder, a folder UUID to filter, `q` to search titles and summaries, and `limit`/`offset` for pagination.
+- `GET /api/v1/library/notes/{id}` returns one saved note.
+- `PATCH /api/v1/library/notes/{id}` moves a note: `{"folder_id":"<folder UUID>"}`; use `null` to move it to “Без папки”. A note belongs to at most one folder.
+- `DELETE /api/v1/library/notes/{id}` permanently removes a note.
+- `POST /api/v1/library/folders` creates a folder: `{"name":"Философия"}`.
+- `PATCH /api/v1/library/folders/{id}` renames a folder.
+- `DELETE /api/v1/library/folders/{id}` permanently removes the folder and every note in it.
 
 Supported input extensions: `.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.opus`, `.flac`, `.wma`, `.mp4`, `.mkv`, `.mov`, `.webm`, `.avi`, `.m4v`. Upload size, text length, media duration, and retention are configured through environment variables.
 

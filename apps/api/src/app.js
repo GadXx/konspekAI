@@ -10,7 +10,20 @@ import { basename, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { config } from '../../../packages/config/src/config.js';
-import { getDatabase, getJob, enqueueJob } from '../../../packages/database/src/database.js';
+import {
+  createLibraryFolder,
+  countLibraryNotes,
+  deleteLibraryFolder,
+  deleteLibraryNote,
+  getDatabase,
+  getJob,
+  getLibraryNote,
+  enqueueJob,
+  listLibraryFolders,
+  listLibraryNotes,
+  moveLibraryNote,
+  renameLibraryFolder,
+} from '../../../packages/database/src/database.js';
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, SUMMARY_TYPES, isPlaceholderText, publicErrorMessage, publicStatus } from '../../../packages/domain/src/job.js';
 import { getMediaDuration } from '../../../packages/media/src/inspect.js';
 import { availableVoskLanguages } from '../../../packages/media/src/models.js';
@@ -22,11 +35,7 @@ const ERROR_SCHEMA = {
   properties: { error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] } },
   required: ['error'],
 };
-const WEB_DIRECTORY = fileURLToPath(new URL('../../web/public/', import.meta.url));
-const WEB_ASSETS = Object.freeze({
-  'app.js': 'text/javascript; charset=utf-8',
-  'styles.css': 'text/css; charset=utf-8',
-});
+const WEB_DIRECTORY = fileURLToPath(new URL('../../web/dist/', import.meta.url));
 
 function unauthorized() {
   return { error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required' } };
@@ -42,6 +51,32 @@ const NOTE_SCHEMA = {
     markdown: { type: 'string' },
   },
   required: ['title', 'summary', 'sections', 'key_points', 'markdown'],
+};
+const LIBRARY_FOLDER_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string' },
+    created_at: { type: 'string', format: 'date-time' },
+    updated_at: { type: 'string', format: 'date-time' },
+    note_count: { type: 'integer' },
+  },
+  required: ['id', 'name', 'created_at', 'updated_at'],
+};
+const LIBRARY_NOTE_LIST_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    folder_id: { type: ['string', 'null'], format: 'uuid' },
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    summary_type: { type: 'string', enum: SUMMARY_TYPES },
+    language: { type: 'string' },
+    summary_language: { type: 'string' },
+    created_at: { type: 'string', format: 'date-time' },
+    updated_at: { type: 'string', format: 'date-time' },
+  },
+  required: ['id', 'title', 'summary', 'summary_type', 'language', 'summary_language', 'created_at', 'updated_at'],
 };
 
 function apiError(statusCode, code, message) {
@@ -218,6 +253,7 @@ export async function buildApp() {
       components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'API token' } } },
       tags: [
         { name: 'jobs', description: 'Создание и получение конспектов' },
+        { name: 'library', description: 'Постоянная библиотека сохранённых конспектов и папок' },
         { name: 'meta', description: 'Справочная информация и проверка готовности' },
       ],
     },
@@ -225,7 +261,7 @@ export async function buildApp() {
   await app.register(swaggerUi, { routePrefix: '/docs' });
   app.get('/openapi.json', { schema: { hide: true } }, async () => app.swagger());
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url.startsWith('/api/v1/jobs')
+    if ((request.url.startsWith('/api/v1/jobs') || request.url.startsWith('/api/v1/library'))
       && (config.apiAccessToken ? !hasValidBearerToken(request.headers.authorization, config.apiAccessToken) : config.appEnv === 'production')) {
       return reply.code(401).header('www-authenticate', 'Bearer').send(unauthorized());
     }
@@ -234,13 +270,19 @@ export async function buildApp() {
   app.get('/', { schema: { hide: true } }, async (_request, reply) => {
     return reply.type('text/html; charset=utf-8').send(await readFile(join(WEB_DIRECTORY, 'index.html')));
   });
-  app.get('/assets/:asset', { schema: { hide: true } }, async (request, reply) => {
-    const contentType = WEB_ASSETS[request.params.asset];
-    if (!contentType) {
+  app.get('/assets/*', { schema: { hide: true } }, async (request, reply) => {
+    const asset = request.params['*'];
+    if (!/^[a-zA-Z0-9_./-]+$/.test(asset) || asset.split('/').includes('..')) {
       return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Asset not found' } });
     }
-    return reply.type(contentType).header('cache-control', 'public, max-age=300')
-      .send(await readFile(join(WEB_DIRECTORY, request.params.asset)));
+    try {
+      const content = await readFile(join(WEB_DIRECTORY, 'assets', asset));
+      const contentType = asset.endsWith('.js') ? 'text/javascript; charset=utf-8'
+        : asset.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/octet-stream';
+      return reply.type(contentType).header('cache-control', 'public, max-age=300').send(content);
+    } catch {
+      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Asset not found' } });
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -268,6 +310,141 @@ export async function buildApp() {
     }
   });
   app.get('/api/v1/languages', { schema: { tags: ['meta'], summary: 'List available speech recognition languages', response: { 200: { type: 'object', properties: { languages: { type: 'array', items: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } } }, required: ['languages'] } } } }, async () => ({ languages: availableVoskLanguages().map((code) => ({ code })) }));
+
+  app.get('/api/v1/library', {
+    schema: {
+      tags: ['library'],
+      summary: 'List saved notes and folders',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          folder_id: { type: 'string', description: 'Filter by folder ID or "unfiled". Omit to list all notes.' },
+          q: { type: 'string', maxLength: 200, description: 'Search note titles and summaries.' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            folders: { type: 'array', items: LIBRARY_FOLDER_SCHEMA },
+            notes: { type: 'array', items: LIBRARY_NOTE_LIST_SCHEMA },
+            total: { type: 'integer' },
+            all_count: { type: 'integer' },
+            unfiled_count: { type: 'integer' },
+            limit: { type: 'integer' },
+            offset: { type: 'integer' },
+          },
+          required: ['folders', 'notes', 'total', 'all_count', 'unfiled_count', 'limit', 'offset'],
+        },
+        401: ERROR_SCHEMA,
+      },
+    },
+  }, async (request) => {
+    const { folder_id: folderId, q } = request.query;
+    const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 100);
+    const offset = Math.max(Number(request.query.offset) || 0, 0);
+    return {
+      folders: await listLibraryFolders(),
+      notes: await listLibraryNotes({ folderId, query: typeof q === 'string' ? q.trim().slice(0, 200) : undefined, limit, offset }),
+      total: await countLibraryNotes({ folderId, query: typeof q === 'string' ? q.trim().slice(0, 200) : undefined }),
+      all_count: await countLibraryNotes(),
+      unfiled_count: await countLibraryNotes({ folderId: 'unfiled' }),
+      limit,
+      offset,
+    };
+  });
+
+  app.get('/api/v1/library/notes/:id', {
+    schema: {
+      tags: ['library'], summary: 'Get a saved note', security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+      response: { 200: { ...NOTE_SCHEMA, additionalProperties: true, properties: { ...NOTE_SCHEMA.properties, id: { type: 'string', format: 'uuid' }, folder_id: { type: ['string', 'null'], format: 'uuid' }, summary_type: { type: 'string', enum: SUMMARY_TYPES }, language: { type: 'string' }, summary_language: { type: 'string' }, created_at: { type: 'string', format: 'date-time' }, updated_at: { type: 'string', format: 'date-time' } } }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+    },
+  }, async (request, reply) => {
+    const note = await getLibraryNote(request.params.id);
+    if (!note) {
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+    }
+    const { sections_json: _sectionsJson, key_points_json: _keyPointsJson, source_job_id: _sourceJobId, ...publicNote } = note;
+    return publicNote;
+  });
+
+  app.delete('/api/v1/library/notes/:id', {
+    schema: { tags: ['library'], summary: 'Delete a saved note permanently', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
+  }, async (request, reply) => {
+    const deleted = await deleteLibraryNote(request.params.id);
+    if (Number(deleted.numDeletedRows) === 0) {
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+    }
+    return reply.code(204).send();
+  });
+
+  app.patch('/api/v1/library/notes/:id', {
+    schema: {
+      tags: ['library'], summary: 'Move a saved note to a folder or to the unfiled section', security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+      body: { type: 'object', properties: { folder_id: { type: ['string', 'null'], format: 'uuid' } }, required: ['folder_id'], additionalProperties: false },
+      response: { 200: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, folder_id: { type: ['string', 'null'], format: 'uuid' }, updated_at: { type: 'string', format: 'date-time' } }, required: ['id', 'updated_at'] }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+    },
+  }, async (request, reply) => {
+    if (request.body.folder_id) {
+      const folder = await getDatabase().selectFrom('library_folders').select('id').where('id', '=', request.body.folder_id).executeTakeFirst();
+      if (!folder) {
+        return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+      }
+    }
+    const note = await moveLibraryNote(request.params.id, request.body.folder_id);
+    if (!note) {
+      return reply.code(404).send({ error: { code: 'NOTE_NOT_FOUND', message: 'Saved note does not exist' } });
+    }
+    return { id: note.id, folder_id: note.folder_id, updated_at: note.updated_at };
+  });
+
+  app.post('/api/v1/library/folders', {
+    schema: {
+      tags: ['library'], summary: 'Create a library folder', security: [{ bearerAuth: [] }],
+      body: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'], additionalProperties: false },
+      response: { 201: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+    },
+  }, async (request, reply) => {
+    const name = request.body.name.trim();
+    if (!name || name.length > 80) {
+      throw apiError(400, 'INVALID_FOLDER_NAME', 'Folder name must contain 1 to 80 characters');
+    }
+    return reply.code(201).send(await createLibraryFolder({ id: randomUUID(), name }));
+  });
+
+  app.patch('/api/v1/library/folders/:id', {
+    schema: {
+      tags: ['library'], summary: 'Rename a library folder', security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+      body: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'], additionalProperties: false },
+      response: { 200: LIBRARY_FOLDER_SCHEMA, 400: ERROR_SCHEMA, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA },
+    },
+  }, async (request, reply) => {
+    const name = request.body.name.trim();
+    if (!name || name.length > 80) {
+      throw apiError(400, 'INVALID_FOLDER_NAME', 'Folder name must contain 1 to 80 characters');
+    }
+    const folder = await renameLibraryFolder(request.params.id, name);
+    if (!folder) {
+      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+    }
+    return folder;
+  });
+
+  app.delete('/api/v1/library/folders/:id', {
+    schema: { tags: ['library'], summary: 'Permanently delete a folder and all saved notes inside it', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] }, response: { 204: { type: 'null' }, 404: ERROR_SCHEMA, 401: ERROR_SCHEMA } },
+  }, async (request, reply) => {
+    const deleted = await deleteLibraryFolder(request.params.id);
+    if (Number(deleted.numDeletedRows) === 0) {
+      return reply.code(404).send({ error: { code: 'FOLDER_NOT_FOUND', message: 'Folder does not exist' } });
+    }
+    return reply.code(204).send();
+  });
 
   app.post('/api/v1/jobs', {
     // Multipart streams have no parsed request.body; validate the request in readSubmission instead.
