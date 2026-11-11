@@ -110,11 +110,14 @@ async function normalizeChunk(text, language) {
   return result.transcript.trim();
 }
 
-async function summarizeChunk(text, { summaryType, summaryLanguage }, mode = 'transcript') {
+async function summarizeChunk(text, { summaryType, summaryLanguage }, mode = 'transcript', strictQuality = false) {
   const isTranscript = mode === 'transcript';
-  const systemPrompt = isTranscript
+  let systemPrompt = isTranscript
     ? renderPrompt(`summary.${summaryType}.system.txt`, { language: summaryLanguage })
     : `${renderPrompt(`summary.${summaryType}.system.txt`, { language: summaryLanguage })}\n\n${renderPrompt(`summary.${mode}.system.txt`, { summary_type: summaryType })}`;
+  if (strictQuality) {
+    systemPrompt += `\n\nПРЕДЫДУЩИЙ РЕЗУЛЬТАТ НЕ ПРОШЁЛ ПРОВЕРКУ КАЧЕСТВА. Создай ответ заново на языке «${summaryLanguage}». Не используй английские или другие иностранные слова и фразы. Для типа detailed обязательно верни не менее трёх непустых тематических разделов, summary из нескольких законченных предложений и не менее трёх key_points. Не оставляй поля пустыми, если формат требует их заполнить. Перед ответом проверь, что весь текст написан на языке «${summaryLanguage}» и что каждый раздел содержит полезное содержание.`;
+  }
   const result = await completeJson({
     stage: 'summary',
     schema: noteSchema(),
@@ -127,41 +130,121 @@ async function summarizeChunk(text, { summaryType, summaryLanguage }, mode = 'tr
 }
 
 export async function normalizeTranscript(text, language) {
-  const chunks = splitAtWordBoundary(text, config.llmMaxInputChars);
+  const chunks = splitAtWordBoundary(text, config.llmNormalizationMaxInputChars);
   const normalized = [];
   for (const chunk of chunks) {
     normalized.push(await normalizeChunk(chunk, language));
   }
-  return normalized.join('\n\n');
+  return validateNormalizedTranscript(text, normalized.join('\n\n'));
 }
 
-export async function createSummary(text, { summaryType, summaryLanguage }) {
+export function validateNormalizedTranscript(sourceText, transcript) {
+  const promptLeak = /язык речи:\s*[a-z-]+\.\s*ниже передана json-строка распознанной речи/iu.test(transcript);
+  if (promptLeak || transcript.length < sourceText.trim().length * config.llmNormalizationMinLengthRatio) {
+    const error = new Error('The transcript normalization omitted source content or echoed prompt instructions');
+    error.code = 'TRANSCRIPT_NORMALIZATION_INCOMPLETE';
+    throw error;
+  }
+  return transcript;
+}
+
+async function createSummaryOnce(text, { summaryType, summaryLanguage }, strictQuality = false) {
   const inputChunks = splitAtWordBoundary(text, config.llmMaxInputChars);
   if (inputChunks.length === 1) {
-    const note = await summarizeChunk(text, { summaryType, summaryLanguage });
+    const note = await summarizeChunk(text, { summaryType, summaryLanguage }, 'transcript', strictQuality);
     note.markdown = renderMarkdown(note);
     return note;
   }
 
   let notes = [];
   for (const chunk of inputChunks) {
-    notes.push(compactNote(await summarizeChunk(chunk, { summaryType, summaryLanguage })));
+    notes.push(compactNote(await summarizeChunk(chunk, { summaryType, summaryLanguage }, 'transcript', strictQuality)));
   }
 
   for (let level = 0; level < 6; level += 1) {
     const serialized = JSON.stringify(notes);
     if (serialized.length <= config.llmMaxInputChars) {
-      const finalNote = await summarizeChunk(serialized, { summaryType, summaryLanguage }, 'merge');
+      const finalNote = await summarizeChunk(serialized, { summaryType, summaryLanguage }, 'merge', strictQuality);
       finalNote.markdown = renderMarkdown(finalNote);
       return finalNote;
     }
     const noteChunks = splitAtWordBoundary(serialized, config.llmMaxInputChars);
     notes = [];
     for (const chunk of noteChunks) {
-      notes.push(compactNote(await summarizeChunk(chunk, { summaryType, summaryLanguage }, 'reduce')));
+      notes.push(compactNote(await summarizeChunk(chunk, { summaryType, summaryLanguage }, 'reduce', strictQuality)));
     }
   }
   throw new Error('Unable to reduce the transcript to the configured LLM context limit');
+}
+
+function expectedScriptRatio(note, summaryLanguage) {
+  const scriptByLanguage = {
+    ru: /\p{Script=Cyrillic}/gu,
+    uk: /\p{Script=Cyrillic}/gu,
+    bg: /\p{Script=Cyrillic}/gu,
+    sr: /\p{Script=Cyrillic}/gu,
+    el: /\p{Script=Greek}/gu,
+    ar: /\p{Script=Arabic}/gu,
+    fa: /\p{Script=Arabic}/gu,
+    he: /\p{Script=Hebrew}/gu,
+    zh: /\p{Script=Han}/gu,
+    ja: /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu,
+    ko: /[\p{Script=Hangul}\p{Script=Han}]/gu,
+  };
+  const expectedScript = scriptByLanguage[summaryLanguage.toLowerCase().split(/[-_]/u)[0]];
+  if (!expectedScript) {
+    return null;
+  }
+  const output = [note.title, note.summary, ...note.sections.flatMap((section) => [section.heading, section.content]), ...note.key_points].join(' ');
+  const letters = output.match(/[\p{L}]/gu) ?? [];
+  if (letters.length < 100) {
+    return null;
+  }
+  const expected = output.match(expectedScript) ?? [];
+  return expected.length / letters.length;
+}
+
+export function summaryQualityProblems(note, summaryType, summaryLanguage) {
+  const problems = [];
+  const minimumSections = summaryType === 'detailed' ? 3 : summaryType === 'brief' ? 1 : 0;
+  const minimumPoints = summaryType === 'bullet_points' ? 4 : 3;
+  if (note.sections.filter((section) => section.heading && section.content).length < minimumSections) {
+    problems.push('too_few_sections');
+  }
+  if (note.key_points.length < minimumPoints) {
+    problems.push('too_few_key_points');
+  }
+  const scriptRatio = expectedScriptRatio(note, summaryLanguage);
+  if (scriptRatio !== null && scriptRatio < 0.78) {
+    problems.push('wrong_or_mixed_language');
+  }
+  if (summaryLanguage.toLowerCase().startsWith('ru')) {
+    const output = [note.title, note.summary, ...note.sections.flatMap((section) => [section.heading, section.content]), ...note.key_points].join(' ');
+    const foreignWords = output.match(/\p{Script=Latin}{3,}/gu) ?? [];
+    const foreignIdeographs = output.match(/[\p{Script=Han}\p{Script=Hangul}]/gu) ?? [];
+    if (foreignWords.length > 0 || foreignIdeographs.length > 0) {
+      problems.push('foreign_words_in_russian_summary');
+    }
+  }
+  return problems;
+}
+
+export async function createSummary(text, options) {
+  const first = await createSummaryOnce(text, options);
+  const problems = summaryQualityProblems(first, options.summaryType, options.summaryLanguage);
+  if (problems.length === 0) {
+    return first;
+  }
+
+  const retried = await createSummaryOnce(text, options, true);
+  const remainingProblems = summaryQualityProblems(retried, options.summaryType, options.summaryLanguage);
+  if (remainingProblems.length === 0) {
+    return retried;
+  }
+
+  const error = new Error(`The generated summary did not pass quality checks: ${remainingProblems.join(', ')}`);
+  error.code = 'SUMMARY_QUALITY_FAILED';
+  throw error;
 }
 
 export { splitAtWordBoundary };

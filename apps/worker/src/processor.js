@@ -99,7 +99,7 @@ export async function processJob(claimedJob, logger = console) {
     if (!current || current.lease_token !== claimedJob.lease_token) {
       return;
     }
-    const nonRetryableCodes = new Set(['UNSUPPORTED_LANGUAGE', 'ASR_MODEL_UNAVAILABLE', 'MEDIA_MISSING', 'NO_SPEECH_DETECTED', 'PLACEHOLDER_TEXT', 'INVALID_MEDIA_FILE', 'MEDIA_DECODE_FAILED']);
+    const nonRetryableCodes = new Set(['UNSUPPORTED_LANGUAGE', 'ASR_MODEL_UNAVAILABLE', 'MEDIA_MISSING', 'NO_SPEECH_DETECTED', 'PLACEHOLDER_TEXT', 'INVALID_MEDIA_FILE', 'MEDIA_DECODE_FAILED', 'SUMMARY_QUALITY_FAILED']);
     const isTerminal = current.attempt_count >= config.jobMaxAttempts || nonRetryableCodes.has(error.code);
     const retryDelay = config.jobRetryBaseMs * (2 ** Math.max(0, current.attempt_count - 1));
     if (isTerminal && sourcePath) {

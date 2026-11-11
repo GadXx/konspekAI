@@ -36,6 +36,7 @@ export function publicErrorMessage(code) {
     MEDIA_MISSING: 'The uploaded media is no longer available.',
     UNSUPPORTED_LANGUAGE: 'The requested speech language is not supported.',
     ASR_MODEL_UNAVAILABLE: 'The speech recognition model is temporarily unavailable.',
+    SUMMARY_QUALITY_FAILED: 'The generated summary failed its language or structure checks.',
     WORKER_LEASE_EXPIRED: 'The job could not be completed after repeated worker interruptions.',
   };
   return safeMessages[code] ?? 'The job could not be completed. Contact the service operator with the job ID.';

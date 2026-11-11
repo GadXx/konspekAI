@@ -75,13 +75,15 @@ export const config = Object.freeze({
   nvidiaBaseUrl: process.env.NVIDIA_BASE_URL ?? 'https://integrate.api.nvidia.com/v1',
   nvidiaApiKey: process.env.NVIDIA_API_KEY ?? '',
   nvidiaModel: process.env.NVIDIA_MODEL ?? 'nvidia/nemotron-3.5-lightning-30b-a3b',
-  nvidiaEnableThinking: process.env.NVIDIA_ENABLE_THINKING !== 'false',
+  nvidiaEnableThinking: process.env.NVIDIA_ENABLE_THINKING === 'true',
   nvidiaNormalizationEnableThinking: process.env.NVIDIA_NORMALIZATION_ENABLE_THINKING === 'true',
   nvidiaReasoningBudget: integer('NVIDIA_REASONING_BUDGET', 4096),
   normalizationModel: process.env.LLM_NORMALIZATION_MODEL,
   summaryModel: process.env.LLM_SUMMARY_MODEL,
   llmTimeoutMs: integer('LLM_TIMEOUT_MS', 180000),
   llmMaxInputChars: integer('LLM_MAX_INPUT_CHARS', 24000),
+  llmNormalizationMaxInputChars: integer('LLM_NORMALIZATION_MAX_INPUT_CHARS', 4000),
+  llmNormalizationMinLengthRatio: Number(process.env.LLM_NORMALIZATION_MIN_LENGTH_RATIO ?? 0.65),
   llmMaxOutputTokens: integer('LLM_MAX_OUTPUT_TOKENS', 4096),
   llmMaxRetries: integer('LLM_MAX_RETRIES', 1, { min: 0 }),
   promptsDirectory: process.env.PROMPTS_DIRECTORY ?? fileURLToPath(new URL('../../llm/prompts/', import.meta.url)),
@@ -96,6 +98,9 @@ export const config = Object.freeze({
 
 if (!['sqlite', 'postgres'].includes(config.databaseDialect)) {
   throw new Error('DATABASE_DIALECT must be "sqlite" or "postgres"');
+}
+if (!Number.isFinite(config.llmNormalizationMinLengthRatio) || config.llmNormalizationMinLengthRatio <= 0 || config.llmNormalizationMinLengthRatio > 1) {
+  throw new Error('LLM_NORMALIZATION_MIN_LENGTH_RATIO must be greater than 0 and at most 1');
 }
 if (config.databaseDialect === 'postgres' && !config.databaseUrl) {
   throw new Error('DATABASE_URL is required when DATABASE_DIALECT=postgres');
