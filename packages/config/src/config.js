@@ -30,6 +30,10 @@ function languageModels() {
 const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development';
 const serviceRole = process.env.SERVICE_ROLE ?? 'api';
 const provider = process.env.LLM_PROVIDER ?? 'ollama';
+const llmTemperature = Number(process.env.LLM_TEMPERATURE ?? 0.2);
+if (!Number.isFinite(llmTemperature) || llmTemperature < 0 || llmTemperature > 2) {
+  throw new Error('LLM_TEMPERATURE must be a number between 0 and 2');
+}
 const trustProxyValue = process.env.TRUST_PROXY ?? 'false';
 const trustProxy = trustProxyValue === 'true' ? true
   : trustProxyValue === 'false' ? false
@@ -85,6 +89,7 @@ export const config = Object.freeze({
   llmNormalizationMaxInputChars: integer('LLM_NORMALIZATION_MAX_INPUT_CHARS', 4000),
   llmNormalizationMinLengthRatio: Number(process.env.LLM_NORMALIZATION_MIN_LENGTH_RATIO ?? 0.65),
   llmMaxOutputTokens: integer('LLM_MAX_OUTPUT_TOKENS', 4096),
+  llmTemperature,
   llmMaxRetries: integer('LLM_MAX_RETRIES', 1, { min: 0 }),
   promptsDirectory: process.env.PROMPTS_DIRECTORY ?? fileURLToPath(new URL('../../llm/prompts/', import.meta.url)),
   mediaProcessTimeoutMs: integer('MEDIA_PROCESS_TIMEOUT_MS', 3600000),

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 
-export function createOpenAiCompatibleAdapter({ baseURL, apiKey, timeoutMs, maxRetries, modelFor, reasoningEffort, extraBodyFor, sendReasoningEffort = false, jsonMode = true, client: injectedClient }) {
+export function createOpenAiCompatibleAdapter({ baseURL, apiKey, timeoutMs, maxRetries, modelFor, reasoningEffort, extraBodyFor, sendReasoningEffort = false, jsonMode = true, temperature = 0.2, client: injectedClient }) {
   const client = injectedClient ?? new OpenAI({ baseURL, apiKey, timeout: timeoutMs, maxRetries });
 
   return {
@@ -10,6 +10,7 @@ export function createOpenAiCompatibleAdapter({ baseURL, apiKey, timeoutMs, maxR
         model: modelFor(stage),
         messages,
         max_tokens: maxTokens,
+        temperature,
         stream: false,
       };
       if (jsonMode) {

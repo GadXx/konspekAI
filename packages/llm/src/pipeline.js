@@ -207,7 +207,7 @@ function expectedScriptRatio(note, summaryLanguage) {
 export function summaryQualityProblems(note, summaryType, summaryLanguage) {
   const problems = [];
   const minimumSections = summaryType === 'detailed' ? 3 : summaryType === 'brief' ? 1 : 0;
-  const minimumPoints = summaryType === 'bullet_points' ? 4 : 3;
+  const minimumPoints = summaryType === 'detailed' || summaryType === 'bullet_points' ? 4 : 3;
   if (note.sections.filter((section) => section.heading && section.content).length < minimumSections) {
     problems.push('too_few_sections');
   }

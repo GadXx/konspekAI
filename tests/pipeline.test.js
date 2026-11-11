@@ -26,7 +26,7 @@ test('detailed Russian summary rejects mixed languages and missing sections', ()
     sections: [], key_points: ['Экономика формирует общество.', 'Труд отчуждает человека.', 'Марксизм призывает изменить мир.'],
   };
   assert.deepEqual(summaryQualityProblems(badNote, 'detailed', 'ru'), [
-    'too_few_sections', 'foreign_words_in_russian_summary',
+    'too_few_sections', 'too_few_key_points', 'foreign_words_in_russian_summary',
   ]);
 });
 
@@ -35,7 +35,7 @@ test('detailed Russian summary accepts complete Russian sections and points', ()
   const goodNote = {
     title: 'Философия Маркса', summary: 'Маркс анализирует общество через материальные условия жизни. Он связывает перемены с устройством производства.',
     sections: [section, section, section],
-    key_points: ['Первично общественное бытие.', 'Экономика составляет основу общества.', 'Философия связана с практикой.'],
+    key_points: ['Первично общественное бытие.', 'Экономика составляет основу общества.', 'Философия связана с практикой.', 'Труд может отчуждать человека.'],
   };
   assert.deepEqual(summaryQualityProblems(goodNote, 'detailed', 'ru'), []);
 });

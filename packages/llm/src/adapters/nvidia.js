@@ -7,6 +7,7 @@ export function createNvidiaAdapter() {
     apiKey: config.nvidiaApiKey,
     timeoutMs: config.llmTimeoutMs,
     maxRetries: config.llmMaxRetries,
+    temperature: config.llmTemperature,
     modelFor: (stage) => stage === 'normalization'
       ? config.normalizationModel || config.nvidiaModel
       : config.summaryModel || config.nvidiaModel,

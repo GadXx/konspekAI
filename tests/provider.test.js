@@ -6,6 +6,7 @@ test('NVIDIA-compatible adapter sends Nemotron thinking options for each pipelin
   const requests = [];
   const adapter = createOpenAiCompatibleAdapter({
     apiKey: 'test-key',
+    temperature: 0.2,
     modelFor: (stage) => stage === 'normalization' ? 'nvidia/test-model' : 'nvidia/nemotron-3.5-lightning-30b-a3b',
     extraBodyFor: (stage) => stage === 'normalization'
       ? { chat_template_kwargs: { enable_thinking: false } }
@@ -22,6 +23,7 @@ test('NVIDIA-compatible adapter sends Nemotron thinking options for each pipelin
   const request = requests[0];
   assert.equal(request.model, 'nvidia/nemotron-3.5-lightning-30b-a3b');
   assert.equal(request.max_tokens, 512);
+  assert.equal(request.temperature, 0.2);
   assert.equal(request.stream, false);
   assert.deepEqual(request.response_format, { type: 'json_object' });
   assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true });

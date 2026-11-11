@@ -7,6 +7,7 @@ export function createOpenAiAdapter() {
     apiKey: config.openaiApiKey,
     timeoutMs: config.llmTimeoutMs,
     maxRetries: config.llmMaxRetries,
+    temperature: config.llmTemperature,
     modelFor: (stage) => stage === 'normalization'
       ? config.normalizationModel || config.openaiModel
       : config.summaryModel || config.openaiModel,
