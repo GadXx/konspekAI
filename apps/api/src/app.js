@@ -5,8 +5,9 @@ import swaggerUi from '@fastify/swagger-ui';
 import { randomUUID } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
 import { createWriteStream } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { config } from '../../../packages/config/src/config.js';
 import { getDatabase, getJob, enqueueJob } from '../../../packages/database/src/database.js';
@@ -21,6 +22,11 @@ const ERROR_SCHEMA = {
   properties: { error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'] } },
   required: ['error'],
 };
+const WEB_DIRECTORY = fileURLToPath(new URL('../../web/public/', import.meta.url));
+const WEB_ASSETS = Object.freeze({
+  'app.js': 'text/javascript; charset=utf-8',
+  'styles.css': 'text/css; charset=utf-8',
+});
 
 function unauthorized() {
   return { error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required' } };
@@ -223,6 +229,18 @@ export async function buildApp() {
       && (config.apiAccessToken ? !hasValidBearerToken(request.headers.authorization, config.apiAccessToken) : config.appEnv === 'production')) {
       return reply.code(401).header('www-authenticate', 'Bearer').send(unauthorized());
     }
+  });
+
+  app.get('/', { schema: { hide: true } }, async (_request, reply) => {
+    return reply.type('text/html; charset=utf-8').send(await readFile(join(WEB_DIRECTORY, 'index.html')));
+  });
+  app.get('/assets/:asset', { schema: { hide: true } }, async (request, reply) => {
+    const contentType = WEB_ASSETS[request.params.asset];
+    if (!contentType) {
+      return reply.code(404).send({ error: { code: 'ASSET_NOT_FOUND', message: 'Asset not found' } });
+    }
+    return reply.type(contentType).header('cache-control', 'public, max-age=300')
+      .send(await readFile(join(WEB_DIRECTORY, request.params.asset)));
   });
 
   app.setErrorHandler((error, request, reply) => {

@@ -11,6 +11,7 @@
 - Uses Ollama (`qwen2.5:14b`) by default, or a generic OpenAI-compatible chat API selected at startup.
 - Creates `detailed`, `brief`, and `bullet_points` notes.
 - Returns a structured JSON note with a Markdown rendering.
+- Includes a browser interface that renders the note as a readable document, with copy and Markdown download actions.
 - Runs as an asynchronous API plus worker, with persisted jobs, retries, and lease recovery.
 - Provides Swagger UI and OpenAPI JSON.
 
@@ -27,7 +28,8 @@ The first run downloads the Russian Vosk small model (about 45 MB) into a persis
 
 Open:
 
-- API: <http://localhost:3000>
+- Web interface: <http://localhost:3000>
+- API: <http://localhost:3000/api/v1/jobs>
 - Swagger UI: <http://localhost:3000/docs>
 - OpenAPI JSON: <http://localhost:3000/openapi.json>
 
@@ -38,6 +40,8 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml up --build
 ```
 
 The production overlay binds the API only to `127.0.0.1`, uses a read-only container filesystem, drops Linux capabilities, and returns only the final note. API job routes require `Authorization: Bearer <API_ACCESS_TOKEN>`; this shared machine token requires no user accounts. The default in-process rate limit is 30 requests per minute per client IP. With multiple API replicas, enforce a shared limit at the reverse proxy or gateway. Set `TRUST_PROXY` only when the API is behind a trusted proxy.
+
+The browser interface submits jobs to the same API, shows progress, and renders the returned title, summary, sections, and key points as a document. In production, enter the shared API token in the access settings on the page. The raw JSON remains available through the API and Swagger.
 
 ### Use the Ollama container profile
 

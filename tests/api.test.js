@@ -16,6 +16,25 @@ test('health and language routes are available', async () => {
   assert.equal(languages.json().languages[0].code, 'ru');
 });
 
+test('browser interface and its assets are served by the API', async () => {
+  const page = await app.inject({ method: 'GET', url: '/' });
+  assert.equal(page.statusCode, 200);
+  assert.match(page.headers['content-type'], /text\/html/u);
+  assert.match(page.body, /Создать конспект/u);
+
+  const script = await app.inject({ method: 'GET', url: '/assets/app.js' });
+  assert.equal(script.statusCode, 200);
+  assert.match(script.headers['content-type'], /javascript/u);
+  assert.match(script.body, /renderNote/u);
+
+  const styles = await app.inject({ method: 'GET', url: '/assets/styles.css' });
+  assert.equal(styles.statusCode, 200);
+  assert.match(styles.headers['content-type'], /text\/css/u);
+
+  const missing = await app.inject({ method: 'GET', url: '/assets/../app.js' });
+  assert.equal(missing.statusCode, 404);
+});
+
 test('text submission returns an asynchronous job and can be claimed by a worker', async () => {
   const response = await app.inject({
     method: 'POST', url: '/api/v1/jobs',
