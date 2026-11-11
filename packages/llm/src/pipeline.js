@@ -60,7 +60,9 @@ function splitAtWordBoundary(text, maxChars) {
 }
 
 export function renderMarkdown(note) {
-  const sections = note.sections.map((section) => `## ${section.heading}\n\n${section.content}`).join('\n\n');
+  const sections = note.sections
+    .filter((section) => section.content.trim())
+    .map((section) => `## ${section.heading}\n\n${section.content}`).join('\n\n');
   const keyPoints = note.key_points.length > 0 ? `## Ключевые тезисы\n\n${note.key_points.map((point) => `- ${point.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '')}`).join('\n')}` : '';
   return [`# ${note.title}`, note.summary, sections, keyPoints].filter(Boolean).join('\n\n').trim();
 }
@@ -77,7 +79,7 @@ export function normalizeNote(note, sourceText, summaryType) {
     .filter(Boolean);
   const sections = note.sections
     .map((section) => ({ heading: section.heading.trim(), content: section.content.trim() }))
-    .filter((section) => section.heading || section.content);
+    .filter((section) => section.content);
   const summary = note.summary.trim()
     || (summaryType === 'bullet_points' ? '' : sections.map((section) => section.content).filter(Boolean).join('\n\n') || keyPoints.join(' '));
   return { ...note, title, summary, sections, key_points: keyPoints };

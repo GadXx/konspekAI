@@ -52,9 +52,8 @@ export function noteSchema() {
         },
       },
       key_points: { type: 'array', items: { type: 'string' } },
-      markdown: { type: 'string' },
     },
-    required: ['title', 'summary', 'sections', 'key_points', 'markdown'],
+    required: ['title', 'summary', 'sections', 'key_points'],
   };
 }
 
@@ -62,25 +61,23 @@ export function validateNote(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('LLM response must be a JSON object');
   }
-  if (typeof value.title !== 'string' || typeof value.summary !== 'string' || typeof value.markdown !== 'string') {
-    throw new Error('LLM response must include title, summary, and markdown strings');
-  }
-  if (!Array.isArray(value.sections) || !Array.isArray(value.key_points)) {
-    throw new Error('LLM response must include sections and key_points arrays');
-  }
-  for (const section of value.sections) {
-    if (typeof section?.heading !== 'string' || typeof section?.content !== 'string') {
-      throw new Error('Each section must contain heading and content strings');
-    }
-  }
-  if (value.key_points.some((point) => typeof point !== 'string')) {
-    throw new Error('Each key point must be a string');
-  }
+  const sections = Array.isArray(value.sections) ? value.sections : [];
+  const keyPoints = Array.isArray(value.key_points) ? value.key_points
+    : Array.isArray(value.keyPoints) ? value.keyPoints
+      : Array.isArray(value.points) ? value.points : [];
   return {
-    title: value.title,
-    summary: value.summary,
-    sections: value.sections,
-    key_points: value.key_points,
-    markdown: value.markdown,
+    title: typeof value.title === 'string' ? value.title : typeof value.topic === 'string' ? value.topic : '',
+    summary: typeof value.summary === 'string' ? value.summary : typeof value.conclusion === 'string' ? value.conclusion : '',
+    sections: sections.map((section) => ({
+      heading: typeof section?.heading === 'string' ? section.heading
+        : typeof section?.title === 'string' ? section.title
+          : typeof section?.name === 'string' ? section.name : '',
+      content: typeof section?.content === 'string' ? section.content
+        : typeof section?.text === 'string' ? section.text
+          : typeof section?.body === 'string' ? section.body : '',
+    })).filter((section) => section.heading || section.content),
+    key_points: keyPoints.map((point) => typeof point === 'string' ? point
+      : typeof point?.text === 'string' ? point.text : '').filter(Boolean),
+    markdown: '',
   };
 }

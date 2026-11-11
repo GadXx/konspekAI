@@ -106,8 +106,10 @@ Copy `.env.example` and edit the values you need. Settings are read at process s
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | empty | Required when `LLM_PROVIDER=openai-compatible`. |
 | `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM OpenAI-compatible endpoint. |
 | `NVIDIA_API_KEY` | empty | Required by the worker when `LLM_PROVIDER=nvidia`; keep it in `.env` or a secret manager. |
-| `NVIDIA_MODEL` | `mistralai/mistral-large-4-1t-a52b` | NVIDIA model used unless stage-specific overrides are set. |
-| `NVIDIA_REASONING_EFFORT` | `high` | NVIDIA reasoning setting supported by the configured model: `none` or `high`. |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-lightning-30b-a3b` | NVIDIA NIM model used unless stage-specific overrides are set. |
+| `NVIDIA_ENABLE_THINKING` | `true` | Enables Nemotron thinking for summary generation. |
+| `NVIDIA_NORMALIZATION_ENABLE_THINKING` | `false` | Keeps thinking off during punctuation normalization so the short output budget is used for the transcript. |
+| `NVIDIA_REASONING_BUDGET` | `4096` | Nemotron thinking budget; leaves output-token room for the structured response. |
 | `API_ACCESS_TOKEN` | empty in development | Required in production; bearer token for job submission, status, and result routes. Use a random value of at least 32 characters. |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` | `120/60000` in development, `30/60000` in production | In-process per-client-IP request limit. Use a gateway limit for multiple API replicas. |
 | `TRUST_PROXY` | `false` | Trusted proxy hop count/address; configure only behind a known proxy. |

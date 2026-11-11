@@ -15,7 +15,21 @@ test('note validation returns only supported fields', () => {
     key_points: ['Первый тезис'], markdown: '# Заголовок', ignored: true,
   });
   assert.deepEqual(Object.keys(note), ['title', 'summary', 'sections', 'key_points', 'markdown']);
-  assert.throws(() => validateNote({ title: 'broken' }), /title, summary, and markdown/);
+  assert.deepEqual(validateNote({ title: 'broken' }), {
+    title: 'broken', summary: '', sections: [], key_points: [], markdown: '',
+  });
+});
+
+test('model output may omit Markdown because the service renders it', () => {
+  const note = validateNote({ title: 'Тема', summary: '', sections: [], key_points: [] });
+  assert.equal(note.markdown, '');
+});
+
+test('model section aliases are normalized to the public section contract', () => {
+  const note = validateNote({ topic: 'Тема', conclusion: 'Вывод', sections: [{ title: 'Раздел', text: 'Текст' }], points: ['Тезис'] });
+  assert.deepEqual(note, {
+    title: 'Тема', summary: 'Вывод', sections: [{ heading: 'Раздел', content: 'Текст' }], key_points: ['Тезис'], markdown: '',
+  });
 });
 
 test('public status does not expose transcript fields', () => {
